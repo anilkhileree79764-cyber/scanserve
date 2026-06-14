@@ -122,7 +122,7 @@ document.getElementById('checkoutBtn').onclick=()=>{
 document.getElementById('placeBtn').onclick=async()=>{
   const phone=document.getElementById('cPhone').value.trim();
   const err=document.getElementById('err'); err.textContent='';
-  if(phone.length<8){err.textContent='Please enter a valid phone number.';return;}
+  if(!/^\d{10}$/.test(phone)){err.textContent='Please enter a valid 10-digit phone number.';return;}
   const items=Object.keys(cart).map(id=>({id:+id,qty:cart[id]}));
   const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({cafe_id:CAFE.id,seat_id:seatId,items,name:document.getElementById('cName').value,phone,pay_method:'counter'})});
