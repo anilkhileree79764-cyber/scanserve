@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Owner Login — ScanServe</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,sans-serif}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#faf7f2;color:#2b2117}
+  .box{background:#fff;border:1px solid #ece4d8;border-radius:16px;padding:28px;width:100%;max-width:380px}
+  h1{color:#b5651d;margin:0 0 4px;font-size:24px}p.sub{color:#8a7f72;margin:0 0 18px;font-size:14px}
+  input{width:100%;padding:12px;border:1px solid #ece4d8;border-radius:10px;font-size:15px;margin-bottom:10px}
+  button{width:100%;background:#b5651d;color:#fff;border:0;border-radius:10px;padding:13px;font-size:16px;font-weight:600;cursor:pointer}
+  .toggle{text-align:center;margin-top:14px;font-size:14px;color:#b5651d;cursor:pointer}
+  .err{color:#c0392b;font-size:13px;min-height:18px;margin-bottom:6px}
+  .hide{display:none}
+</style></head>
+<body>
+<div class="box">
+  <h1>ScanServe</h1>
+  <p class="sub" id="sub">Owner login</p>
+  <div class="err" id="err"></div>
+
+  <div id="loginForm">
+    <input id="lEmail" type="email" placeholder="Email" autocomplete="username">
+    <input id="lPass" type="password" placeholder="Password" autocomplete="current-password">
+    <button onclick="login()">Log in</button>
+    <div class="toggle" onclick="show('register')">New cafe? Create an account &rarr;</div>
+  </div>
+
+  <div id="registerForm" class="hide">
+    <input id="rCafe" placeholder="Cafe name">
+    <input id="rEmail" type="email" placeholder="Email">
+    <input id="rPass" type="password" placeholder="Choose a password">
+    <input id="rUpi" placeholder="UPI ID (e.g. yourcafe@upi) — optional">
+    <button onclick="register()">Create account</button>
+    <div class="toggle" onclick="show('login')">&larr; Back to login</div>
+  </div>
+</div>
+<script>
+function show(which){
+  document.getElementById('loginForm').classList.toggle('hide', which!=='login');
+  document.getElementById('registerForm').classList.toggle('hide', which!=='register');
+  document.getElementById('sub').textContent = which==='login' ? 'Owner login' : 'Register your cafe';
+  document.getElementById('err').textContent='';
+}
+function save(d){ localStorage.setItem('ss_token', d.token); localStorage.setItem('ss_cafe', d.cafe_id); localStorage.setItem('ss_name', d.cafe_name); location.href='/dashboard.html'; }
+async function login(){
+  const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:document.getElementById('lEmail').value,password:document.getElementById('lPass').value})});
+  const d=await r.json(); if(!r.ok){document.getElementById('err').textContent=d.error;return;} save(d);
+}
+async function register(){
+  const r=await fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cafe_name:document.getElementById('rCafe').value,email:document.getElementById('rEmail').value,password:document.getElementById('rPass').value,upi_id:document.getElementById('rUpi').value})});
+  const d=await r.json(); if(!r.ok){document.getElementById('err').textContent=d.error;return;} save(d);
+}
+</script>
+</body></html>

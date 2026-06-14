@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: scanserve
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DB_PATH
+        value: /data/cafe.db
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1

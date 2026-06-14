@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order</title>
+<style>
+  :root{--bg:#faf7f2;--card:#fff;--ink:#2b2117;--accent:#b5651d;--muted:#8a7f72;--line:#ece4d8}
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--ink)}
+  header{background:var(--accent);color:#fff;padding:16px;position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:18px}header small{opacity:.85}
+  .wrap{max-width:520px;margin:0 auto;padding:12px 14px 140px}
+  .cat{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:18px 0 6px}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .item h3{margin:0 0 2px;font-size:15px}.item p{margin:0;color:var(--muted);font-size:12px}
+  .soldout{opacity:.5}.soldout .qbtn{display:none}
+  .badge{font-size:11px;color:#c0392b;font-weight:600}
+  .price{font-weight:700;white-space:nowrap}
+  .qty{display:flex;align-items:center;gap:8px}
+  .qbtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--accent);background:#fff;color:var(--accent);font-size:18px;cursor:pointer}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 14px;max-width:520px;margin:0 auto}
+  button.cta{width:100%;background:var(--accent);color:#fff;border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:600;cursor:pointer}
+  button.cta:disabled{opacity:.4}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;justify-content:center;z-index:20}
+  .modal.show{display:flex}
+  .sheet{background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:18px}
+  .sheet h2{margin:0 0 12px}
+  input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:15px;margin-bottom:10px}
+  .status-box{text-align:center;padding:20px}
+  .clock{font-size:46px;font-weight:800;color:var(--accent)}
+  .pill{display:inline-block;padding:5px 12px;border-radius:20px;background:#f0e6d6;font-size:13px;margin-top:8px}
+  .stars span{font-size:30px;cursor:pointer;color:#ddd}.stars span.on{color:#f1c40f}
+  .err{color:#c0392b;font-size:13px;min-height:18px}
+  .payinfo{background:#f0e6d6;border-radius:10px;padding:12px;font-size:13px;color:#7a5a14;margin-top:10px;line-height:1.4}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="cafeName">Loading...</h1>
+  <small id="seatLabel"></small>
+</header>
+<div class="wrap" id="menu"></div>
+
+<div class="bar">
+  <button class="cta" id="checkoutBtn" disabled>Add items to order</button>
+</div>
+
+<div class="modal" id="checkout">
+  <div class="sheet">
+    <h2>Your order</h2>
+    <div id="summary"></div>
+    <input id="cName" placeholder="Your name (optional)">
+    <input id="cPhone" placeholder="Phone number *" inputmode="numeric">
+    <div class="payinfo">Pay at the counter — by cash or the cafe's UPI scanner — when you collect your order.</div>
+    <div class="err" id="err"></div>
+    <button class="cta" id="placeBtn">Place order</button>
+  </div>
+</div>
+
+<div class="modal" id="statusModal">
+  <div class="sheet">
+    <div class="status-box">
+      <div id="statusText" style="font-size:18px;font-weight:600">Order placed!</div>
+      <div class="clock" id="clock">-</div>
+      <div>minutes left</div>
+      <div class="pill" id="pointPill"></div>
+      <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+      <div style="font-weight:600;margin-bottom:6px">How was it?</div>
+      <div class="stars" id="stars"><span data-v="1">&#9733;</span><span data-v="2">&#9733;</span><span data-v="3">&#9733;</span><span data-v="4">&#9733;</span><span data-v="5">&#9733;</span></div>
+      <input id="fbText" placeholder="Any comment? (optional)" style="margin-top:10px">
+      <button class="cta" id="fbBtn">Submit feedback</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const seatId = params.get('seat');
+let CAFE=null, cart={}, MENU=[], ORDER_ID=null, rating=0;
+
+async function load(){
+  if(!seatId){ document.getElementById('cafeName').textContent='Invalid QR code'; return; }
+  const r = await fetch('/api/scan/'+seatId);
+  if(!r.ok){ document.getElementById('cafeName').textContent='QR not recognised'; return; }
+  const d = await r.json();
+  CAFE=d.cafe; MENU=d.menu;
+  document.getElementById('cafeName').textContent=d.cafe.name;
+  document.getElementById('seatLabel').textContent='Seat: '+d.seat.label;
+  render();
+}
+function render(){
+  const wrap=document.getElementById('menu'); wrap.innerHTML='';
+  let cat='';
+  for(const m of MENU){
+    if(m.category!==cat){cat=m.category; const h=document.createElement('div');h.className='cat';h.textContent=cat;wrap.appendChild(h);}
+    const q=cart[m.id]||0;
+    const el=document.createElement('div'); el.className='item'+(m.available?'':' soldout');
+    el.innerHTML=`<div><h3>${m.name}</h3><p>~${m.prep_mins} min</p>${m.available?'':'<span class="badge">SOLD OUT</span>'}</div>
+      <div style="text-align:right"><div class="price">&#8377;${(m.price/100).toFixed(0)}</div>
+      <div class="qty">${q?`<button class="qbtn" data-d="${m.id}">-</button><b>${q}</b>`:''}<button class="qbtn" data-a="${m.id}">+</button></div></div>`;
+    wrap.appendChild(el);
+  }
+  wrap.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{cart[b.dataset.a]=(cart[b.dataset.a]||0)+1;render();updateBar();});
+  wrap.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{cart[b.dataset.d]--;if(cart[b.dataset.d]<=0)delete cart[b.dataset.d];render();updateBar();});
+  updateBar();
+}
+function cartTotal(){let t=0;for(const id in cart){const m=MENU.find(x=>x.id==id);t+=m.price*cart[id];}return t;}
+function updateBar(){
+  const n=Object.values(cart).reduce((a,b)=>a+b,0);
+  const btn=document.getElementById('checkoutBtn');
+  btn.disabled=n===0;
+  btn.textContent=n?`Review order - &#8377;${(cartTotal()/100).toFixed(0)} (${n})`:'Add items to order';
+}
+document.getElementById('checkoutBtn').onclick=()=>{
+  const s=document.getElementById('summary'); s.innerHTML='';
+  for(const id in cart){const m=MENU.find(x=>x.id==id);
+    s.innerHTML+=`<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>${cart[id]}x ${m.name}</span><b>&#8377;${(m.price*cart[id]/100).toFixed(0)}</b></div>`;}
+  s.innerHTML+=`<hr style="border:none;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Total</span><span>&#8377;${(cartTotal()/100).toFixed(0)}</span></div>`;
+  document.getElementById('checkout').classList.add('show');
+};
+document.getElementById('placeBtn').onclick=async()=>{
+  const phone=document.getElementById('cPhone').value.trim();
+  const err=document.getElementById('err'); err.textContent='';
+  if(phone.length<8){err.textContent='Please enter a valid phone number.';return;}
+  const items=Object.keys(cart).map(id=>({id:+id,qty:cart[id]}));
+  const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cafe_id:CAFE.id,seat_id:seatId,items,name:document.getElementById('cName').value,phone,pay_method:'counter'})});
+  const d=await r.json();
+  if(!r.ok){err.textContent=d.error||'Could not place order';return;}
+  ORDER_ID=d.orderId;
+  document.getElementById('checkout').classList.remove('show');
+  document.getElementById('pointPill').textContent=`+${d.points_earned} loyalty points earned`;
+  document.getElementById('statusModal').classList.add('show');
+  poll();
+};
+async function poll(){
+  if(!ORDER_ID)return;
+  const r=await fetch(`/api/order/${ORDER_ID}/status`); const d=await r.json();
+  const map={placed:'Order received',preparing:'Being prepared',ready:'Ready! Pick up',served:'Enjoy!'};
+  document.getElementById('statusText').textContent=map[d.status]||d.status;
+  document.getElementById('clock').textContent=d.remaining_mins;
+  if(d.status!=='served') setTimeout(poll,15000);
+}
+document.querySelectorAll('#stars span').forEach(s=>s.onclick=()=>{
+  rating=+s.dataset.v;
+  document.querySelectorAll('#stars span').forEach(x=>x.classList.toggle('on',+x.dataset.v<=rating));
+});
+document.getElementById('fbBtn').onclick=async()=>{
+  await fetch(`/api/order/${ORDER_ID}/feedback`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({rating,feedback:document.getElementById('fbText').value})});
+  document.getElementById('fbBtn').textContent='Thank you!';
+};
+load();
+</script>
+</body>
+</html>

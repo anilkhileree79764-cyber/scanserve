@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cafe Dashboard</title>
+<style>
+  :root{--bg:#f4f5f7;--card:#fff;--ink:#1f2733;--accent:#b5651d;--muted:#7a8694;--line:#e6e9ee;--green:#2e9e5b;--amber:#e08a1e}
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--ink)}
+  header{background:#1f2733;color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  header h1{margin:0;font-size:17px}
+  header a,header button{background:#b5651d;color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;text-decoration:none}
+  header .ghost{background:transparent;border:1px solid #4a5563}
+  .tabs{display:flex;gap:6px;padding:10px 20px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+  .tab{padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:14px}
+  .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .stats{display:flex;gap:12px;padding:16px 20px;flex-wrap:wrap}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 18px;flex:1;min-width:140px}
+  .stat b{display:block;font-size:26px}.stat span{color:var(--muted);font-size:13px}
+  .wrap{padding:0 20px 40px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card.placed{border-left:4px solid var(--amber)} .card.preparing{border-left:4px solid #3b82f6}
+  .card.ready{border-left:4px solid var(--green)} .card.served{opacity:.55}
+  .card h3{margin:0 0 4px;font-size:15px;display:flex;justify-content:space-between}
+  .li{font-size:14px;color:#333} .meta{color:var(--muted);font-size:12px;margin:6px 0}
+  .act{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .act button{flex:1;border:0;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;background:#eef1f5}
+  .act button.go{background:var(--accent);color:#fff}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px}
+  th{background:#fafbfc;color:var(--muted)}
+  .toggle{cursor:pointer;padding:5px 12px;border-radius:20px;font-size:12px;border:0}
+  .on-sale{background:#e3f5ea;color:var(--green)} .off-sale{background:#fde8e6;color:#c0392b}
+  .hide{display:none}
+  .note{background:#fff7e6;border:1px solid #f0d9a8;padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:13px;color:#7a5a14;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .note button{background:#b5651d;color:#fff;border:0;border-radius:8px;padding:9px 16px;cursor:pointer}
+  .additem{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .additem input{flex:1;min-width:120px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+  .additem .addbtn{background:var(--green);color:#fff;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;font-weight:600}
+  #menuTable input{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+  .savebtn{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px}
+  .delbtn{background:#fde8e6;color:#c0392b;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px;margin-left:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="cafeTitle">Dashboard</h1>
+  <div>
+    <a href="/qr.html">Print QR codes</a>
+    <button class="ghost" onclick="logout()">Log out</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab on" data-t="orders">Live Orders</div>
+  <div class="tab" data-t="kitchen">Kitchen</div>
+  <div class="tab" data-t="menu">Menu / Sold-out</div>
+  <div class="tab" data-t="customers">Customers</div>
+  <div class="tab" data-t="winback">Win-back</div>
+</div>
+
+<div class="stats" id="stats"></div>
+<div class="wrap">
+  <div id="orders" class="pane"><div class="grid" id="ordersGrid"></div></div>
+  <div id="kitchen" class="pane hide"><div class="grid" id="kitchenGrid"></div></div>
+  <div id="menu" class="pane hide">
+    <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
+      <span>Add, edit prices, or remove items here. Changes show on the customer menu instantly.</span>
+    </div>
+    <div class="additem">
+      <input id="niName" placeholder="Item name">
+      <input id="niPrice" type="number" placeholder="Price" style="max-width:90px">
+      <input id="niCat" placeholder="Category" style="max-width:120px">
+      <input id="niPrep" type="number" placeholder="Min" style="max-width:70px">
+      <button class="addbtn" onclick="addItem()">+ Add item</button>
+    </div>
+    <table id="menuTable"><thead><tr><th>Name</th><th>Price</th><th>Category</th><th>Prep (min)</th><th>Available</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+  <div id="customers" class="pane hide"><table id="custTable"><thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Visits</th><th>Last visit</th></tr></thead><tbody></tbody></table></div>
+  <div id="winback" class="pane hide">
+    <div class="note">
+      <span>These customers haven't visited in 30+ days. Send them a "We miss you — 10% off" offer by SMS/WhatsApp.</span>
+      <button onclick="sendWinback()" id="wbBtn">Send offer to all</button>
+    </div>
+    <table id="wbTable"><thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Last visit</th></tr></thead><tbody></tbody></table>
+  </div>
+</div>
+
+<script>
+const TOKEN=localStorage.getItem('ss_token'), CAFE=localStorage.getItem('ss_cafe'), NAME=localStorage.getItem('ss_name');
+if(!TOKEN||!CAFE){location.href='/login.html';}
+const H={Authorization:'Bearer '+TOKEN};
+const money=p=>'₹'+(p/100).toFixed(0);
+function logout(){localStorage.clear();location.href='/login.html';}
+async function api(path,opts={}){
+  const r=await fetch(path,{...opts,headers:{...H,...(opts.headers||{})}});
+  if(r.status===401){logout();return null;}
+  return r;
+}
+function init(){
+  document.getElementById('cafeTitle').textContent=NAME||'Dashboard';
+  refresh();
+  setInterval(()=>{ if(document.querySelector('.tab.on').dataset.t!=='menu') refresh(); },10000);
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on');
+  document.querySelectorAll('.pane').forEach(p=>p.classList.add('hide'));
+  document.getElementById(t.dataset.t).classList.remove('hide'); refresh();
+});
+async function refresh(){
+  const which=document.querySelector('.tab.on').dataset.t;
+  const sr=await api(`/api/cafe/${CAFE}/stats`); if(!sr)return; const s=await sr.json();
+  document.getElementById('stats').innerHTML=
+    `<div class="stat"><b>${s.orders_today}</b><span>Orders today</span></div>
+     <div class="stat"><b>${money(s.revenue_today)}</b><span>Revenue today</span></div>
+     <div class="stat"><b>${s.active_orders}</b><span>Active now</span></div>`;
+  ({orders:drawOrders,kitchen:drawKitchen,menu:drawMenu,customers:drawCustomers,winback:drawWinback})[which]();
+}
+const NEXT={placed:'preparing',preparing:'ready',ready:'served'};
+const LABEL={placed:'Start preparing',preparing:'Mark ready',ready:'Mark served'};
+async function drawOrders(){
+  const o=await (await api(`/api/cafe/${CAFE}/orders`)).json();
+  document.getElementById('ordersGrid').innerHTML=o.map(x=>`
+    <div class="card ${x.status}">
+      <h3><span>#${x.id} - ${x.seat_label}</span><span>${money(x.total)}</span></h3>
+      <div class="meta">${x.status.toUpperCase()}</div>
+      ${x.items.map(i=>`<div class="li">${i.qty}x ${i.name}</div>`).join('')}
+      <div class="act">
+        ${NEXT[x.status]?`<button class="go" onclick="adv(${x.id},'${NEXT[x.status]}')">${LABEL[x.status]}</button>`:''}
+      </div>
+    </div>`).join('') || '<p style="color:#7a8694">No orders yet.</p>';
+}
+async function drawKitchen(){
+  const o=(await (await api(`/api/cafe/${CAFE}/orders`)).json()).filter(x=>['placed','preparing'].includes(x.status));
+  document.getElementById('kitchenGrid').innerHTML=o.map(x=>`
+    <div class="card ${x.status}">
+      <h3><span>#${x.id} - ${x.seat_label}</span></h3>
+      ${x.items.map(i=>`<div class="li" style="font-size:17px">${i.qty}x ${i.name}</div>`).join('')}
+      <div class="act"><button class="go" onclick="adv(${x.id},'${NEXT[x.status]}')">${LABEL[x.status]}</button></div>
+    </div>`).join('') || '<p style="color:#7a8694">Kitchen clear</p>';
+}
+async function drawMenu(){
+  const m=await (await api(`/api/cafe/${CAFE}/menu`)).json();
+  document.querySelector('#menuTable tbody').innerHTML=m.map(i=>`
+    <tr data-id="${i.id}">
+      <td><input class="e-name" value="${i.name.replace(/"/g,'&quot;')}"></td>
+      <td><input class="e-price" type="number" value="${(i.price/100)}"></td>
+      <td><input class="e-cat" value="${(i.category||'').replace(/"/g,'&quot;')}"></td>
+      <td><input class="e-prep" type="number" value="${i.prep_mins}"></td>
+      <td><button class="toggle ${i.available?'on-sale':'off-sale'}" onclick="toggle(${i.id},${i.available?0:1})">${i.available?'Available':'Sold out'}</button></td>
+      <td style="white-space:nowrap"><button class="savebtn" onclick="saveItem(${i.id},this)">Save</button><button class="delbtn" onclick="delItem(${i.id})">Delete</button></td>
+    </tr>`).join('')||'<tr><td colspan=6 style="color:#7a8694">No items yet — add one above.</td></tr>';
+}
+async function addItem(){
+  const name=document.getElementById('niName').value.trim();
+  const price=parseFloat(document.getElementById('niPrice').value);
+  if(!name||!(price>=0)){alert('Enter a name and price.');return;}
+  await api(`/api/cafe/${CAFE}/menu`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,price:Math.round(price*100),category:document.getElementById('niCat').value||'General',prep_mins:document.getElementById('niPrep').value||10})});
+  ['niName','niPrice','niCat','niPrep'].forEach(id=>document.getElementById(id).value='');
+  drawMenu();
+}
+async function saveItem(id,btn){
+  const tr=btn.closest('tr');
+  await api(`/api/menu/${id}`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:tr.querySelector('.e-name').value,price:Math.round(parseFloat(tr.querySelector('.e-price').value)*100),category:tr.querySelector('.e-cat').value,prep_mins:tr.querySelector('.e-prep').value})});
+  btn.textContent='Saved'; setTimeout(()=>btn.textContent='Save',1500);
+}
+async function delItem(id){
+  if(!confirm('Delete this item?'))return;
+  await api(`/api/menu/${id}/delete`,{method:'POST'}); drawMenu();
+}
+async function drawCustomers(){
+  const c=await (await api(`/api/cafe/${CAFE}/customers`)).json();
+  document.querySelector('#custTable tbody').innerHTML=c.map(x=>`
+    <tr><td>${x.name||'-'}</td><td>${x.phone}</td><td>${x.points}</td><td>${x.visits}</td><td>${x.last_visit.split(' ')[0]}</td></tr>`).join('')||'<tr><td colspan=5>No customers yet.</td></tr>';
+}
+async function drawWinback(){
+  const d=await (await api(`/api/cafe/${CAFE}/winback?days=30`)).json();
+  document.querySelector('#wbTable tbody').innerHTML=d.customers.map(x=>`
+    <tr><td>${x.name||'-'}</td><td>${x.phone}</td><td>${x.points}</td><td>${x.last_visit.split(' ')[0]}</td></tr>`).join('')||'<tr><td colspan=4>Everyone visited recently</td></tr>';
+}
+async function sendWinback(){
+  const b=document.getElementById('wbBtn'); b.disabled=true; b.textContent='Sending...';
+  const r=await (await api(`/api/cafe/${CAFE}/winback/send`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:30})})).json();
+  b.textContent=`Sent to ${r.sent}/${r.total}`; setTimeout(()=>{b.disabled=false;b.textContent='Send offer to all';},3000);
+}
+async function adv(id,st){await api(`/api/order/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:st})});refresh();}
+async function toggle(id,v){await api(`/api/menu/${id}/available`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({available:v})});drawMenu();}
+init();
+</script>
+</body>
+</html>
