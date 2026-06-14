@@ -24,7 +24,10 @@ function sessionFromReq(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return null;
-  return db.prepare('SELECT * FROM sessions WHERE token = ?').get(token);
+  // Sessions expire after 30 days
+  return db.prepare(
+    "SELECT * FROM sessions WHERE token = ? AND created_at >= datetime('now', '-30 days')"
+  ).get(token);
 }
 
 function requireAuth(req, res, next) {

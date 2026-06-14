@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cafe Dashboard</title>
+<title>Cafe Dashboard — ScanServe</title>
 <style>
   :root{--bg:#f4f5f7;--card:#fff;--ink:#1f2733;--accent:#b5651d;--muted:#7a8694;--line:#e6e9ee;--green:#2e9e5b;--amber:#e08a1e}
   *{box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
@@ -16,8 +16,8 @@
   .tab{padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:14px}
   .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .stats{display:flex;gap:12px;padding:16px 20px;flex-wrap:wrap}
-  .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 18px;flex:1;min-width:140px}
-  .stat b{display:block;font-size:26px}.stat span{color:var(--muted);font-size:13px}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 18px;flex:1;min-width:120px}
+  .stat b{display:block;font-size:24px}.stat span{color:var(--muted);font-size:12px}
   .wrap{padding:0 20px 40px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
   .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
@@ -28,9 +28,9 @@
   .act{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
   .act button{flex:1;border:0;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;background:#eef1f5}
   .act button.go{background:var(--accent);color:#fff}
-  table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}
-  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);font-size:14px}
-  th{background:#fafbfc;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+  th{background:#fafbfc;color:var(--muted);font-size:13px}
   .toggle{cursor:pointer;padding:5px 12px;border-radius:20px;font-size:12px;border:0}
   .on-sale{background:#e3f5ea;color:var(--green)} .off-sale{background:#fde8e6;color:#c0392b}
   .hide{display:none}
@@ -42,12 +42,26 @@
   #menuTable input{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px}
   .savebtn{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px}
   .delbtn{background:#fde8e6;color:#c0392b;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px;margin-left:6px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px;font-weight:600}
+  .field input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:15px}
+  .savesettings{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:600;cursor:pointer}
+  .filters{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+  .filters input{padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+  .filters button{padding:8px 16px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:14px}
+  .filters a{padding:8px 16px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);text-decoration:none;font-size:14px}
+  .stars{color:#f1c40f}
+  .badge-status{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
+  .badge-placed{background:#fff3cd;color:#856404}
+  .badge-preparing{background:#cfe2ff;color:#084298}
+  .badge-ready{background:#d1e7dd;color:#0a3622}
+  .badge-served{background:#f8f9fa;color:#6c757d}
 </style>
 </head>
 <body>
 <header>
   <h1 id="cafeTitle">Dashboard</h1>
-  <div>
+  <div style="display:flex;gap:8px">
     <a href="/qr.html">Print QR codes</a>
     <button class="ghost" onclick="logout()">Log out</button>
   </div>
@@ -56,139 +70,391 @@
 <div class="tabs">
   <div class="tab on" data-t="orders">Live Orders</div>
   <div class="tab" data-t="kitchen">Kitchen</div>
-  <div class="tab" data-t="menu">Menu / Sold-out</div>
+  <div class="tab" data-t="menu">Menu</div>
+  <div class="tab" data-t="history">History</div>
   <div class="tab" data-t="customers">Customers</div>
   <div class="tab" data-t="winback">Win-back</div>
+  <div class="tab" data-t="settings">Settings</div>
 </div>
 
 <div class="stats" id="stats"></div>
 <div class="wrap">
   <div id="orders" class="pane"><div class="grid" id="ordersGrid"></div></div>
   <div id="kitchen" class="pane hide"><div class="grid" id="kitchenGrid"></div></div>
+
   <div id="menu" class="pane hide">
     <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
-      <span>Add, edit prices, or remove items here. Changes show on the customer menu instantly.</span>
+      <span>Add, edit prices, or toggle sold-out here. Sold-out items reset automatically every day at midnight.</span>
     </div>
     <div class="additem">
-      <input id="niName" placeholder="Item name">
-      <input id="niPrice" type="number" placeholder="Price" style="max-width:90px">
+      <input id="niName" placeholder="Item name" maxlength="100">
+      <input id="niPrice" type="number" placeholder="Price (₹)" style="max-width:90px" min="0">
       <input id="niCat" placeholder="Category" style="max-width:120px">
-      <input id="niPrep" type="number" placeholder="Min" style="max-width:70px">
+      <input id="niPrep" type="number" placeholder="Prep min" style="max-width:80px" min="1">
       <button class="addbtn" onclick="addItem()">+ Add item</button>
     </div>
-    <table id="menuTable"><thead><tr><th>Name</th><th>Price</th><th>Category</th><th>Prep (min)</th><th>Available</th><th></th></tr></thead><tbody></tbody></table>
+    <table id="menuTable">
+      <thead><tr><th>Name</th><th>Price (₹)</th><th>Category</th><th>Prep (min)</th><th>Status</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
   </div>
-  <div id="customers" class="pane hide"><table id="custTable"><thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Visits</th><th>Last visit</th></tr></thead><tbody></tbody></table></div>
+
+  <div id="history" class="pane hide">
+    <div class="filters">
+      <span style="font-weight:600">Date range:</span>
+      <input type="date" id="hFrom">
+      <span>to</span>
+      <input type="date" id="hTo">
+      <button onclick="loadHistory()">Filter</button>
+      <a id="exportLink" href="#" onclick="exportCSV(event)">⬇ Download CSV</a>
+    </div>
+    <div id="historyStats" style="margin-bottom:14px"></div>
+    <table id="historyTable">
+      <thead><tr><th>#</th><th>Date & Time</th><th>Seat</th><th>Items</th><th>Total</th><th>Status</th><th>Rating</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="customers" class="pane hide">
+    <table id="custTable">
+      <thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Visits</th><th>Last visit</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
   <div id="winback" class="pane hide">
     <div class="note">
-      <span>These customers haven't visited in 30+ days. Send them a "We miss you — 10% off" offer by SMS/WhatsApp.</span>
+      <span>Customers who haven't visited in 30+ days. Send them a "We miss you" offer via SMS/WhatsApp.</span>
       <button onclick="sendWinback()" id="wbBtn">Send offer to all</button>
     </div>
-    <table id="wbTable"><thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Last visit</th></tr></thead><tbody></tbody></table>
+    <table id="wbTable">
+      <thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Last visit</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="settings" class="pane hide" style="max-width:480px">
+    <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
+      <span>Changes here update your cafe instantly — menu, QR codes, and customer receipts all reflect the new info.</span>
+    </div>
+    <div class="field">
+      <label>Cafe name</label>
+      <input id="sCafeName" placeholder="Your cafe name">
+    </div>
+    <div class="field">
+      <label>UPI ID <span style="font-weight:400;color:var(--muted)">(customers see this when paying)</span></label>
+      <input id="sUpi" placeholder="yourcafe@upi">
+    </div>
+    <div class="field">
+      <label>Loyalty points per ₹100 spent <span style="font-weight:400;color:var(--muted)">(0 to disable)</span></label>
+      <input id="sLoyalty" type="number" min="0" max="100" placeholder="10">
+    </div>
+    <button class="savesettings" onclick="saveSettings()">Save settings</button>
+    <div id="settingsMsg" style="margin-top:10px;font-size:14px;color:var(--green)"></div>
   </div>
 </div>
 
 <script>
-const TOKEN=localStorage.getItem('ss_token'), CAFE=localStorage.getItem('ss_cafe'), NAME=localStorage.getItem('ss_name');
-if(!TOKEN||!CAFE){location.href='/login.html';}
-const H={Authorization:'Bearer '+TOKEN};
-const money=p=>'₹'+(p/100).toFixed(0);
-function logout(){localStorage.clear();location.href='/login.html';}
-async function api(path,opts={}){
-  const r=await fetch(path,{...opts,headers:{...H,...(opts.headers||{})}});
-  if(r.status===401){logout();return null;}
+const TOKEN = localStorage.getItem('ss_token');
+const CAFE = localStorage.getItem('ss_cafe');
+const NAME = localStorage.getItem('ss_name');
+if (!TOKEN || !CAFE) { location.href = '/login.html'; }
+const H = { Authorization: 'Bearer ' + TOKEN };
+const money = p => '₹' + (p / 100).toFixed(0);
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function txt(el, s) { el.textContent = s; }
+
+function logout() {
+  fetch('/api/auth/logout', { method: 'POST', headers: H });
+  localStorage.clear();
+  location.href = '/login.html';
+}
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { ...H, ...(opts.headers || {}) } });
+  if (r.status === 401) { logout(); return null; }
   return r;
 }
-function init(){
-  document.getElementById('cafeTitle').textContent=NAME||'Dashboard';
+
+function init() {
+  document.getElementById('cafeTitle').textContent = NAME || 'Dashboard';
+  // Set default date range to last 7 days
+  const today = new Date().toISOString().split('T')[0];
+  const week = new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0];
+  document.getElementById('hFrom').value = week;
+  document.getElementById('hTo').value = today;
   refresh();
-  setInterval(()=>{ if(document.querySelector('.tab.on').dataset.t!=='menu') refresh(); },10000);
+  setInterval(() => {
+    const which = document.querySelector('.tab.on').dataset.t;
+    if (!['menu', 'settings', 'history'].includes(which)) refresh();
+  }, 10000);
 }
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on');
-  document.querySelectorAll('.pane').forEach(p=>p.classList.add('hide'));
-  document.getElementById(t.dataset.t).classList.remove('hide'); refresh();
+
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  document.querySelectorAll('.pane').forEach(p => p.classList.add('hide'));
+  document.getElementById(t.dataset.t).classList.remove('hide');
+  refresh();
 });
-async function refresh(){
-  const which=document.querySelector('.tab.on').dataset.t;
-  const sr=await api(`/api/cafe/${CAFE}/stats`); if(!sr)return; const s=await sr.json();
-  document.getElementById('stats').innerHTML=
+
+async function refresh() {
+  const which = document.querySelector('.tab.on').dataset.t;
+  const sr = await api(`/api/cafe/${CAFE}/stats`);
+  if (!sr) return;
+  const s = await sr.json();
+  const stars = s.avg_rating ? '⭐'.repeat(Math.round(s.avg_rating)) + ` ${s.avg_rating}` : '—';
+  document.getElementById('stats').innerHTML =
     `<div class="stat"><b>${s.orders_today}</b><span>Orders today</span></div>
      <div class="stat"><b>${money(s.revenue_today)}</b><span>Revenue today</span></div>
-     <div class="stat"><b>${s.active_orders}</b><span>Active now</span></div>`;
-  ({orders:drawOrders,kitchen:drawKitchen,menu:drawMenu,customers:drawCustomers,winback:drawWinback})[which]();
+     <div class="stat"><b>${money(s.revenue_week)}</b><span>This week</span></div>
+     <div class="stat"><b>${s.active_orders}</b><span>Active now</span></div>
+     <div class="stat"><b>${stars}</b><span>Avg rating</span></div>`;
+
+  const fns = { orders: drawOrders, kitchen: drawKitchen, menu: drawMenu, history: loadHistory, customers: drawCustomers, winback: drawWinback, settings: loadSettings };
+  if (fns[which]) fns[which]();
 }
-const NEXT={placed:'preparing',preparing:'ready',ready:'served'};
-const LABEL={placed:'Start preparing',preparing:'Mark ready',ready:'Mark served'};
-async function drawOrders(){
-  const o=await (await api(`/api/cafe/${CAFE}/orders`)).json();
-  document.getElementById('ordersGrid').innerHTML=o.map(x=>`
-    <div class="card ${x.status}">
-      <h3><span>#${x.id} - ${x.seat_label}</span><span>${money(x.total)}</span></h3>
-      <div class="meta">${x.status.toUpperCase()}</div>
-      ${x.items.map(i=>`<div class="li">${i.qty}x ${i.name}</div>`).join('')}
-      <div class="act">
-        ${NEXT[x.status]?`<button class="go" onclick="adv(${x.id},'${NEXT[x.status]}')">${LABEL[x.status]}</button>`:''}
-      </div>
-    </div>`).join('') || '<p style="color:#7a8694">No orders yet.</p>';
+
+const NEXT = { placed: 'preparing', preparing: 'ready', ready: 'served' };
+const LABEL = { placed: 'Start preparing', preparing: 'Mark ready', ready: 'Mark served' };
+
+async function drawOrders() {
+  const r = await api(`/api/cafe/${CAFE}/orders`);
+  if (!r) return;
+  const orders = await r.json();
+  const grid = document.getElementById('ordersGrid');
+  grid.innerHTML = '';
+  if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">No orders yet.</p>'; return; }
+  for (const x of orders) {
+    const card = document.createElement('div');
+    card.className = `card ${x.status}`;
+    const h = document.createElement('h3');
+    const l = document.createElement('span'); l.textContent = `#${x.id} - ${x.seat_label}`;
+    const r2 = document.createElement('span'); r2.textContent = money(x.total);
+    h.append(l, r2);
+    const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = x.status.toUpperCase() + (x.paid ? ' · PAID' : '');
+    const items = x.items.map(i => { const d = document.createElement('div'); d.className = 'li'; d.textContent = `${i.qty}x ${i.name}`; return d; });
+    const act = document.createElement('div'); act.className = 'act';
+    if (NEXT[x.status]) {
+      const btn = document.createElement('button'); btn.className = 'go';
+      btn.textContent = LABEL[x.status];
+      btn.onclick = () => adv(x.id, NEXT[x.status]);
+      act.appendChild(btn);
+    }
+    if (!x.paid && x.status === 'served') {
+      const pb = document.createElement('button'); pb.textContent = 'Mark paid';
+      pb.onclick = () => markPaid(x.id); act.appendChild(pb);
+    }
+    card.append(h, meta, ...items, act);
+    grid.appendChild(card);
+  }
 }
-async function drawKitchen(){
-  const o=(await (await api(`/api/cafe/${CAFE}/orders`)).json()).filter(x=>['placed','preparing'].includes(x.status));
-  document.getElementById('kitchenGrid').innerHTML=o.map(x=>`
-    <div class="card ${x.status}">
-      <h3><span>#${x.id} - ${x.seat_label}</span></h3>
-      ${x.items.map(i=>`<div class="li" style="font-size:17px">${i.qty}x ${i.name}</div>`).join('')}
-      <div class="act"><button class="go" onclick="adv(${x.id},'${NEXT[x.status]}')">${LABEL[x.status]}</button></div>
-    </div>`).join('') || '<p style="color:#7a8694">Kitchen clear</p>';
+
+async function drawKitchen() {
+  const r = await api(`/api/cafe/${CAFE}/orders`);
+  if (!r) return;
+  const orders = (await r.json()).filter(x => ['placed', 'preparing'].includes(x.status));
+  const grid = document.getElementById('kitchenGrid');
+  grid.innerHTML = '';
+  if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">Kitchen clear ✓</p>'; return; }
+  for (const x of orders) {
+    const card = document.createElement('div');
+    card.className = `card ${x.status}`;
+    const h = document.createElement('h3');
+    const l = document.createElement('span'); l.textContent = `#${x.id} - ${x.seat_label}`;
+    h.appendChild(l);
+    const items = x.items.map(i => { const d = document.createElement('div'); d.className = 'li'; d.style.fontSize = '17px'; d.textContent = `${i.qty}x ${i.name}`; return d; });
+    const act = document.createElement('div'); act.className = 'act';
+    const btn = document.createElement('button'); btn.className = 'go';
+    btn.textContent = LABEL[x.status]; btn.onclick = () => adv(x.id, NEXT[x.status]);
+    act.appendChild(btn);
+    card.append(h, ...items, act);
+    grid.appendChild(card);
+  }
 }
-async function drawMenu(){
-  const m=await (await api(`/api/cafe/${CAFE}/menu`)).json();
-  document.querySelector('#menuTable tbody').innerHTML=m.map(i=>`
-    <tr data-id="${i.id}">
-      <td><input class="e-name" value="${i.name.replace(/"/g,'&quot;')}"></td>
-      <td><input class="e-price" type="number" value="${(i.price/100)}"></td>
-      <td><input class="e-cat" value="${(i.category||'').replace(/"/g,'&quot;')}"></td>
-      <td><input class="e-prep" type="number" value="${i.prep_mins}"></td>
-      <td><button class="toggle ${i.available?'on-sale':'off-sale'}" onclick="toggle(${i.id},${i.available?0:1})">${i.available?'Available':'Sold out'}</button></td>
-      <td style="white-space:nowrap"><button class="savebtn" onclick="saveItem(${i.id},this)">Save</button><button class="delbtn" onclick="delItem(${i.id})">Delete</button></td>
-    </tr>`).join('')||'<tr><td colspan=6 style="color:#7a8694">No items yet — add one above.</td></tr>';
+
+async function drawMenu() {
+  const r = await api(`/api/cafe/${CAFE}/menu`);
+  if (!r) return;
+  const items = await r.json();
+  const tbody = document.querySelector('#menuTable tbody');
+  tbody.innerHTML = '';
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan=6 style="color:#7a8694">No items yet — add one above.</td></tr>';
+    return;
+  }
+  for (const i of items) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = i.id;
+    const nameInput = document.createElement('input'); nameInput.className = 'e-name'; nameInput.value = i.name; nameInput.maxLength = 100;
+    const priceInput = document.createElement('input'); priceInput.className = 'e-price'; priceInput.type = 'number'; priceInput.value = (i.price/100); priceInput.min = 0;
+    const catInput = document.createElement('input'); catInput.className = 'e-cat'; catInput.value = i.category || '';
+    const prepInput = document.createElement('input'); prepInput.className = 'e-prep'; prepInput.type = 'number'; prepInput.value = i.prep_mins; prepInput.min = 1;
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = `toggle ${i.available ? 'on-sale' : 'off-sale'}`;
+    toggleBtn.textContent = i.available ? 'Available' : 'Sold out';
+    toggleBtn.onclick = () => toggleItem(i.id, i.available ? 0 : 1);
+    const saveBtn = document.createElement('button'); saveBtn.className = 'savebtn'; saveBtn.textContent = 'Save';
+    saveBtn.onclick = () => saveItem(i.id, saveBtn, tr);
+    const delBtn = document.createElement('button'); delBtn.className = 'delbtn'; delBtn.textContent = 'Delete';
+    delBtn.onclick = () => delItem(i.id);
+    const cells = [nameInput, priceInput, catInput, prepInput, toggleBtn, null];
+    cells.forEach((c, idx) => {
+      const td = document.createElement('td');
+      if (idx === 5) { td.style.whiteSpace = 'nowrap'; td.append(saveBtn, delBtn); }
+      else if (c) td.appendChild(c);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  }
 }
-async function addItem(){
-  const name=document.getElementById('niName').value.trim();
-  const price=parseFloat(document.getElementById('niPrice').value);
-  if(!name||!(price>=0)){alert('Enter a name and price.');return;}
-  await api(`/api/cafe/${CAFE}/menu`,{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,price:Math.round(price*100),category:document.getElementById('niCat').value||'General',prep_mins:document.getElementById('niPrep').value||10})});
-  ['niName','niPrice','niCat','niPrep'].forEach(id=>document.getElementById(id).value='');
+
+async function addItem() {
+  const name = document.getElementById('niName').value.trim();
+  const price = parseFloat(document.getElementById('niPrice').value);
+  if (!name || !(price >= 0)) { alert('Enter a name and price.'); return; }
+  await api(`/api/cafe/${CAFE}/menu`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, price: Math.round(price * 100), category: document.getElementById('niCat').value || 'General', prep_mins: document.getElementById('niPrep').value || 10 }) });
+  ['niName','niPrice','niCat','niPrep'].forEach(id => document.getElementById(id).value = '');
   drawMenu();
 }
-async function saveItem(id,btn){
-  const tr=btn.closest('tr');
-  await api(`/api/menu/${id}`,{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name:tr.querySelector('.e-name').value,price:Math.round(parseFloat(tr.querySelector('.e-price').value)*100),category:tr.querySelector('.e-cat').value,prep_mins:tr.querySelector('.e-prep').value})});
-  btn.textContent='Saved'; setTimeout(()=>btn.textContent='Save',1500);
+
+async function saveItem(id, btn, tr) {
+  await api(`/api/menu/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: tr.querySelector('.e-name').value, price: Math.round(parseFloat(tr.querySelector('.e-price').value) * 100), category: tr.querySelector('.e-cat').value, prep_mins: tr.querySelector('.e-prep').value }) });
+  btn.textContent = 'Saved ✓'; setTimeout(() => btn.textContent = 'Save', 1500);
 }
-async function delItem(id){
-  if(!confirm('Delete this item?'))return;
-  await api(`/api/menu/${id}/delete`,{method:'POST'}); drawMenu();
+
+async function delItem(id) {
+  if (!confirm('Delete this item from the menu?')) return;
+  await api(`/api/menu/${id}/delete`, { method: 'POST' });
+  drawMenu();
 }
-async function drawCustomers(){
-  const c=await (await api(`/api/cafe/${CAFE}/customers`)).json();
-  document.querySelector('#custTable tbody').innerHTML=c.map(x=>`
-    <tr><td>${x.name||'-'}</td><td>${x.phone}</td><td>${x.points}</td><td>${x.visits}</td><td>${x.last_visit.split(' ')[0]}</td></tr>`).join('')||'<tr><td colspan=5>No customers yet.</td></tr>';
+
+async function loadHistory() {
+  const from = document.getElementById('hFrom').value;
+  const to = document.getElementById('hTo').value;
+  const r = await api(`/api/cafe/${CAFE}/history?from=${from}&to=${to}`);
+  if (!r) return;
+  const orders = await r.json();
+  const total = orders.reduce((s, o) => s + o.total, 0);
+  document.getElementById('historyStats').innerHTML =
+    `<b>${orders.length}</b> orders · Total revenue: <b>${money(total)}</b>`;
+  const tbody = document.querySelector('#historyTable tbody');
+  tbody.innerHTML = '';
+  if (!orders.length) { tbody.innerHTML = '<tr><td colspan=7 style="color:#7a8694">No orders in this period.</td></tr>'; return; }
+  for (const o of orders) {
+    const tr = document.createElement('tr');
+    const statusClass = `badge-status badge-${o.status}`;
+    const ratingStars = o.rating ? '⭐'.repeat(o.rating) : '—';
+    const cells = [
+      o.id,
+      o.created_at.replace('T', ' ').slice(0, 16),
+      o.seat_label,
+      o.items_summary || '—',
+      money(o.total) + (o.paid ? ' ✓' : ''),
+      null,
+      ratingStars
+    ];
+    cells.forEach((c, i) => {
+      const td = document.createElement('td');
+      if (i === 5) { td.innerHTML = `<span class="${statusClass}">${esc(o.status)}</span>`; }
+      else td.textContent = c;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  }
 }
-async function drawWinback(){
-  const d=await (await api(`/api/cafe/${CAFE}/winback?days=30`)).json();
-  document.querySelector('#wbTable tbody').innerHTML=d.customers.map(x=>`
-    <tr><td>${x.name||'-'}</td><td>${x.phone}</td><td>${x.points}</td><td>${x.last_visit.split(' ')[0]}</td></tr>`).join('')||'<tr><td colspan=4>Everyone visited recently</td></tr>';
+
+function exportCSV(e) {
+  e.preventDefault();
+  const from = document.getElementById('hFrom').value;
+  const to = document.getElementById('hTo').value;
+  window.location.href = `/api/cafe/${CAFE}/export?from=${from}&to=${to}`;
 }
-async function sendWinback(){
-  const b=document.getElementById('wbBtn'); b.disabled=true; b.textContent='Sending...';
-  const r=await (await api(`/api/cafe/${CAFE}/winback/send`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:30})})).json();
-  b.textContent=`Sent to ${r.sent}/${r.total}`; setTimeout(()=>{b.disabled=false;b.textContent='Send offer to all';},3000);
+
+async function drawCustomers() {
+  const r = await api(`/api/cafe/${CAFE}/customers`);
+  if (!r) return;
+  const customers = await r.json();
+  const tbody = document.querySelector('#custTable tbody');
+  tbody.innerHTML = '';
+  if (!customers.length) { tbody.innerHTML = '<tr><td colspan=5>No customers yet.</td></tr>'; return; }
+  for (const x of customers) {
+    const tr = document.createElement('tr');
+    [x.name || '—', x.phone, x.points, x.visits, x.last_visit.split(' ')[0]].forEach(v => {
+      const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  }
 }
-async function adv(id,st){await api(`/api/order/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:st})});refresh();}
-async function toggle(id,v){await api(`/api/menu/${id}/available`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({available:v})});drawMenu();}
+
+async function drawWinback() {
+  const r = await api(`/api/cafe/${CAFE}/winback?days=30`);
+  if (!r) return;
+  const d = await r.json();
+  const tbody = document.querySelector('#wbTable tbody');
+  tbody.innerHTML = '';
+  if (!d.customers.length) { tbody.innerHTML = '<tr><td colspan=4 style="color:var(--green)">Everyone visited recently ✓</td></tr>'; return; }
+  for (const x of d.customers) {
+    const tr = document.createElement('tr');
+    [x.name || '—', x.phone, x.points, x.last_visit.split(' ')[0]].forEach(v => {
+      const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  }
+}
+
+async function sendWinback() {
+  const b = document.getElementById('wbBtn'); b.disabled = true; b.textContent = 'Sending...';
+  const r = await api(`/api/cafe/${CAFE}/winback/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days: 30 }) });
+  const d = await r.json();
+  b.textContent = `Sent to ${d.sent}/${d.total}`;
+  setTimeout(() => { b.disabled = false; b.textContent = 'Send offer to all'; }, 3000);
+}
+
+async function loadSettings() {
+  const r = await api(`/api/cafe/${CAFE}/settings`);
+  if (!r) return;
+  const s = await r.json();
+  document.getElementById('sCafeName').value = s.name || '';
+  document.getElementById('sUpi').value = s.upi_id || '';
+  document.getElementById('sLoyalty').value = s.loyalty_rate ?? 10;
+}
+
+async function saveSettings() {
+  const name = document.getElementById('sCafeName').value.trim();
+  const upi_id = document.getElementById('sUpi').value.trim();
+  const loyalty_rate = document.getElementById('sLoyalty').value;
+  if (!name) { alert('Cafe name cannot be empty.'); return; }
+  const r = await api(`/api/cafe/${CAFE}/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, upi_id, loyalty_rate }) });
+  if (!r) return;
+  const d = await r.json();
+  if (d.ok) {
+    localStorage.setItem('ss_name', name);
+    document.getElementById('cafeTitle').textContent = name;
+    document.getElementById('settingsMsg').textContent = 'Settings saved ✓';
+    setTimeout(() => document.getElementById('settingsMsg').textContent = '', 2000);
+  }
+}
+
+async function adv(id, st) {
+  await api(`/api/order/${id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: st }) });
+  refresh();
+}
+async function toggleItem(id, v) {
+  await api(`/api/menu/${id}/available`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ available: v }) });
+  drawMenu();
+}
+async function markPaid(id) {
+  await api(`/api/order/${id}/paid`, { method: 'POST' });
+  refresh();
+}
+
 init();
 </script>
 </body>
