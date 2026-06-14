@@ -36,4 +36,24 @@ async function sendResetEmail(email, resetUrl) {
   }
 }
 
-module.exports = { sendResetEmail, LIVE };
+async function sendVerifyEmail(email, verifyUrl) {
+  if (!LIVE) {
+    console.log(`\n[DEMO EMAIL VERIFY] -> ${email}\nVerify link: ${verifyUrl}\n`);
+    return true;
+  }
+  try {
+    await transport.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: email,
+      subject: 'Verify your ScanServe email',
+      text: `Welcome to ScanServe! Confirm your email:\n\n${verifyUrl}`,
+      html: `<p>Welcome to ScanServe! Confirm your email:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`,
+    });
+    return true;
+  } catch (e) {
+    console.error('Verify email failed:', e.message);
+    return false;
+  }
+}
+
+module.exports = { sendResetEmail, sendVerifyEmail, LIVE };

@@ -17,7 +17,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:"],
+      imgSrc: ["'self'", "data:", "https:"],
     },
   },
 }));
@@ -59,6 +59,41 @@ const orderLimiter = rateLimit({
 
 const getCafe = (id) => db.prepare('SELECT * FROM cafes WHERE id = ?').get(id);
 
+// Audit log helper — records owner actions for accountability
+function audit(cafeId, actor, action, detail) {
+  try { db.prepare('INSERT INTO audit_log (cafe_id,actor,action,detail) VALUES (?,?,?,?)')
+    .run(cafeId, actor || 'owner', action, detail || null); } catch {}
+}
+
+// Health check (for uptime monitors / Render)
+app.get('/healthz', (req, res) => {
+  try { db.prepare('SELECT 1').get(); res.json({ ok: true, ts: Date.now() }); }
+  catch (e) { res.status(500).json({ ok: false }); }
+});
+
+// Daily automated DB backup (keeps last 7)
+function scheduleBackup() {
+  const fs = require('fs');
+  const dir = path.join(__dirname, 'backups');
+  const run = () => {
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+      const src = process.env.DB_PATH || path.join(__dirname, 'cafe.db');
+      if (fs.existsSync(src)) {
+        const stamp = new Date().toISOString().slice(0, 10);
+        fs.copyFileSync(src, path.join(dir, `cafe-${stamp}.db`));
+        // prune to last 7
+        const files = fs.readdirSync(dir).filter(f => f.endsWith('.db')).sort();
+        while (files.length > 7) fs.unlinkSync(path.join(dir, files.shift()));
+        console.log('[Backup] saved cafe-' + stamp + '.db');
+      }
+    } catch (e) { console.error('[Backup] failed:', e.message); }
+  };
+  run();
+  setInterval(run, 24 * 60 * 60 * 1000);
+}
+scheduleBackup();
+
 // Reset sold-out items daily at midnight
 function scheduleDailySoldoutReset() {
   const now = new Date();
@@ -90,44 +125,67 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   if (db.prepare('SELECT 1 FROM owners WHERE email = ?').get(email))
     return res.status(409).json({ error: 'Email already registered' });
 
+  const crypto = require('crypto');
   const cafeId = 'cafe_' + Math.random().toString(36).slice(2, 8);
+  const verifyToken = crypto.randomBytes(24).toString('hex');
   const tx = db.transaction(() => {
-    db.prepare('INSERT INTO cafes (id,name,owner_email,upi_id) VALUES (?,?,?,?)')
+    db.prepare("INSERT INTO cafes (id,name,owner_email,upi_id,trial_ends) VALUES (?,?,?,?,datetime('now','+14 days'))")
       .run(cafeId, cafe_name.trim(), email, upi_id || null);
-    const r = db.prepare('INSERT INTO owners (cafe_id,email,pass_hash) VALUES (?,?,?)')
-      .run(cafeId, email, auth.hashPassword(password));
+    const r = db.prepare('INSERT INTO owners (cafe_id,email,pass_hash,verify_token) VALUES (?,?,?,?)')
+      .run(cafeId, email, auth.hashPassword(password), verifyToken);
     return { id: r.lastInsertRowid, cafe_id: cafeId };
   });
   const owner = tx();
+  seedStarterData(cafeId);
 
-  // Seed a starter menu so new owners don't see an empty dashboard
-  const starterMenu = [
-    ['Cappuccino', 8000, 'Coffee', 5],
-    ['Masala Chai', 3000, 'Tea', 4],
-    ['Cold Coffee', 10000, 'Coffee', 5],
-    ['Veg Sandwich', 8000, 'Food', 8],
-    ['Chocolate Brownie', 6000, 'Desserts', 2],
-  ];
-  const insItem = db.prepare('INSERT INTO menu_items (cafe_id,name,price,category,prep_mins) VALUES (?,?,?,?,?)');
-  for (const [n, p, c, m] of starterMenu) insItem.run(cafeId, n, p, c, m);
-
-  // Add 4 starter tables
-  for (let i = 1; i <= 4; i++) {
-    db.prepare('INSERT INTO seats (id, cafe_id, label) VALUES (?,?,?)').run(`${cafeId}_t${i}`, cafeId, `Table ${i}`);
-  }
+  // Send verification email (demo mode logs link to console)
+  const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  mailer.sendVerifyEmail(email, `${baseUrl}/api/auth/verify?token=${verifyToken}`).catch(() => {});
 
   const token = auth.createSession(owner);
   res.json({ ok: true, token, cafe_id: cafeId, cafe_name: cafe_name.trim(), is_new: true });
 });
 
+// Seed a starter menu + tables so new owners don't see an empty dashboard
+function seedStarterData(cafeId) {
+  const starterMenu = [
+    // name, price(paise), category, prep, food_type, spicy, station, desc
+    ['Cappuccino', 8000, 'Coffee', 5, 'veg', 0, 'Bar', 'Rich espresso with steamed milk foam'],
+    ['Masala Chai', 3000, 'Tea', 4, 'veg', 1, 'Bar', 'Spiced Indian tea'],
+    ['Cold Coffee', 10000, 'Coffee', 5, 'veg', 0, 'Bar', 'Chilled blended coffee'],
+    ['Veg Sandwich', 8000, 'Food', 8, 'veg', 0, 'Kitchen', 'Grilled veggies & cheese'],
+    ['Paneer Tikka', 16000, 'Food', 12, 'veg', 2, 'Kitchen', 'Smoky grilled cottage cheese'],
+    ['Chicken Roll', 14000, 'Food', 10, 'nonveg', 1, 'Kitchen', 'Spiced chicken wrap'],
+    ['Chocolate Brownie', 6000, 'Desserts', 2, 'egg', 0, 'Kitchen', 'Warm fudgy brownie'],
+  ];
+  const insItem = db.prepare('INSERT INTO menu_items (cafe_id,name,price,category,prep_mins,food_type,spicy,station,description) VALUES (?,?,?,?,?,?,?,?,?)');
+  for (const m of starterMenu) insItem.run(cafeId, ...m);
+  for (let i = 1; i <= 4; i++) {
+    db.prepare('INSERT INTO seats (id, cafe_id, label) VALUES (?,?,?)').run(`${cafeId}_t${i}`, cafeId, `Table ${i}`);
+  }
+}
+
+// Verify email link
+app.get('/api/auth/verify', (req, res) => {
+  const owner = db.prepare('SELECT * FROM owners WHERE verify_token = ?').get(req.query.token);
+  if (!owner) return res.status(400).send('<h2>Invalid or expired verification link.</h2>');
+  db.prepare('UPDATE owners SET email_verified=1, verify_token=NULL WHERE id=?').run(owner.id);
+  res.send('<h2 style="font-family:system-ui">✅ Email verified! You can close this tab.</h2>');
+});
+
 app.post('/api/auth/login', authLimiter, (req, res) => {
   const { email, password } = req.body;
-  const owner = db.prepare('SELECT * FROM owners WHERE email = ?').get(email);
+  let owner = db.prepare('SELECT * FROM owners WHERE email = ?').get(email);
+  let role = 'owner';
+  if (!owner) {
+    const st = db.prepare('SELECT * FROM staff WHERE email = ?').get(email);
+    if (st) { owner = st; role = st.role; }
+  }
   if (!owner || !auth.verifyPassword(password, owner.pass_hash))
     return res.status(401).json({ error: 'Wrong email or password' });
   const token = auth.createSession(owner);
   const cafe = getCafe(owner.cafe_id);
-  res.json({ ok: true, token, cafe_id: owner.cafe_id, cafe_name: cafe.name });
+  res.json({ ok: true, token, cafe_id: owner.cafe_id, cafe_name: cafe.name, role });
 });
 
 app.get('/api/auth/me', auth.requireAuth, (req, res) => {
@@ -185,9 +243,53 @@ app.get('/api/scan/:seatId', (req, res) => {
   if (!seat) return res.status(404).json({ error: 'Unknown QR code' });
   const cafe = getCafe(seat.cafe_id);
   const menu = db.prepare(
-    'SELECT id,name,price,category,prep_mins,available FROM menu_items WHERE cafe_id = ? ORDER BY category,name'
+    `SELECT id,name,price,category,prep_mins,available,image_url,food_type,spicy,is_combo,description
+     FROM menu_items WHERE cafe_id = ? ORDER BY category,name`
   ).all(seat.cafe_id);
-  res.json({ cafe: { id: cafe.id, name: cafe.name, upi_id: cafe.upi_id }, seat, menu });
+  // Bestseller flags — top 3 most-ordered items in last 30 days
+  const best = db.prepare(
+    `SELECT oi.item_id id, SUM(oi.qty) n FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+      WHERE o.cafe_id = ? AND o.created_at >= datetime('now','-30 days')
+      GROUP BY oi.item_id ORDER BY n DESC LIMIT 3`
+  ).all(seat.cafe_id);
+  const bestIds = new Set(best.map(b => b.id));
+  for (const m of menu) m.bestseller = bestIds.has(m.id) ? 1 : 0;
+  res.json({
+    cafe: { id: cafe.id, name: cafe.name, upi_id: cafe.upi_id,
+            logo_url: cafe.logo_url, brand_color: cafe.brand_color || '#b5651d' },
+    seat, menu,
+  });
+});
+
+// Repeat last order — by phone
+app.get('/api/scan/:seatId/last-order', (req, res) => {
+  const seat = db.prepare('SELECT * FROM seats WHERE id = ?').get(req.params.seatId);
+  if (!seat) return res.status(404).json({ error: 'Unknown QR code' });
+  const phone = (req.query.phone || '').toString();
+  if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Valid phone required' });
+  const cust = db.prepare('SELECT id FROM customers WHERE cafe_id=? AND phone=?').get(seat.cafe_id, phone);
+  if (!cust) return res.json({ items: [] });
+  const last = db.prepare('SELECT id FROM orders WHERE cafe_id=? AND customer_id=? ORDER BY created_at DESC LIMIT 1')
+    .get(seat.cafe_id, cust.id);
+  if (!last) return res.json({ items: [] });
+  const items = db.prepare('SELECT item_id id, name, qty FROM order_items WHERE order_id=?').all(last.id);
+  res.json({ items });
+});
+
+// Call waiter (public)
+app.post('/api/call-waiter', orderLimiter, (req, res) => {
+  const { seat_id, reason } = req.body;
+  const seat = seat_id ? db.prepare('SELECT * FROM seats WHERE id = ?').get(seat_id) : null;
+  if (!seat) return res.status(404).json({ error: 'Unknown table' });
+  // throttle: max 1 unresolved call per seat per 2 min
+  const recent = db.prepare(
+    "SELECT 1 FROM waiter_calls WHERE seat_id=? AND resolved=0 AND created_at >= datetime('now','-2 minutes')"
+  ).get(seat_id);
+  if (recent) return res.json({ ok: true, message: 'Staff already notified' });
+  db.prepare('INSERT INTO waiter_calls (cafe_id,seat_id,seat_label,reason) VALUES (?,?,?,?)')
+    .run(seat.cafe_id, seat_id, seat.label, (reason || 'Assistance').toString().slice(0, 80));
+  res.json({ ok: true, message: 'Staff notified' });
 });
 
 app.post('/api/order', orderLimiter, (req, res) => {
@@ -216,7 +318,7 @@ app.post('/api/order', orderLimiter, (req, res) => {
     const qty = Math.max(1, Math.min(20, parseInt(line.qty) || 1));
     total += m.price * qty;
     eta = Math.max(eta, m.prep_mins);
-    resolved.push({ id: m.id, name: m.name, price: m.price, qty });
+    resolved.push({ id: m.id, name: m.name, price: m.price, qty, note: (line.note || '').toString().slice(0, 120) || null });
   }
 
   const tx = db.transaction(() => {
@@ -233,8 +335,8 @@ app.post('/api/order', orderLimiter, (req, res) => {
       `INSERT INTO orders (cafe_id,seat_id,seat_label,customer_id,total,pay_method,eta_mins,notes)
        VALUES (?,?,?,?,?,?,?,?)`
     ).run(cafe_id, seat_id || null, seat ? seat.label : 'Takeaway', cust.id, total, pay_method || 'upi', eta, notes || null);
-    const insItem = db.prepare('INSERT INTO order_items (order_id,item_id,name,price,qty) VALUES (?,?,?,?,?)');
-    for (const it of resolved) insItem.run(o.lastInsertRowid, it.id, it.name, it.price, it.qty);
+    const insItem = db.prepare('INSERT INTO order_items (order_id,item_id,name,price,qty,note) VALUES (?,?,?,?,?,?)');
+    for (const it of resolved) insItem.run(o.lastInsertRowid, it.id, it.name, it.price, it.qty, it.note);
     const earned = Math.floor((total / 100) * cafe.loyalty_rate / 100);
     db.prepare('UPDATE customers SET points = points + ? WHERE id = ?').run(earned, cust.id);
     return { orderId: o.lastInsertRowid, earned };
@@ -256,9 +358,9 @@ app.get('/api/order/:id/status', (req, res) => {
 app.get('/api/order/:id/receipt', (req, res) => {
   const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!o) return res.status(404).json({ error: 'Order not found' });
-  const items = db.prepare('SELECT name,qty,price FROM order_items WHERE order_id = ?').all(o.id);
+  const items = db.prepare('SELECT name,qty,price,note FROM order_items WHERE order_id = ?').all(o.id);
   const cafe = getCafe(o.cafe_id);
-  res.json({ order: o, items, cafe: { name: cafe.name, upi_id: cafe.upi_id } });
+  res.json({ order: o, items, cafe: { name: cafe.name, upi_id: cafe.upi_id, google_review_url: cafe.google_review_url } });
 });
 
 app.post('/api/order/:id/feedback', (req, res) => {
@@ -298,8 +400,15 @@ app.get('/api/cafe/:cafeId/orders', auth.requireAuth, (req, res) => {
   const orders = db.prepare(
     'SELECT * FROM orders WHERE cafe_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
   ).all(req.params.cafeId, limit, offset);
-  const getItems = db.prepare('SELECT name,qty,price FROM order_items WHERE order_id = ?');
-  for (const o of orders) o.items = getItems.all(o.id);
+  const getItems = db.prepare('SELECT name,qty,price,note,item_id FROM order_items WHERE order_id = ?');
+  for (const o of orders) {
+    o.items = getItems.all(o.id);
+    // attach station(s) for kitchen routing
+    const st = db.prepare(
+      `SELECT DISTINCT m.station FROM order_items oi JOIN menu_items m ON m.id=oi.item_id WHERE oi.order_id=?`
+    ).all(o.id).map(r => r.station).filter(Boolean);
+    o.stations = st.length ? st : ['Kitchen'];
+  }
   res.json(orders);
 });
 
@@ -365,22 +474,43 @@ app.post('/api/menu/:id/available', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+const FOOD_TYPES = ['veg', 'nonveg', 'egg'];
 app.post('/api/cafe/:cafeId/menu', auth.requireAuth, (req, res) => {
-  const { name, price, category, prep_mins } = req.body;
+  const { name, price, category, prep_mins, image_url, food_type, spicy, is_combo, station, description } = req.body;
   if (!name || !(price >= 0)) return res.status(400).json({ error: 'Name and price required' });
   if (name.length > 100) return res.status(400).json({ error: 'Item name too long' });
-  const r = db.prepare('INSERT INTO menu_items (cafe_id,name,price,category,prep_mins) VALUES (?,?,?,?,?)')
-    .run(req.cafe_id, name.trim(), Math.round(price), (category || 'General').trim(), parseInt(prep_mins) || 10);
+  const ft = FOOD_TYPES.includes(food_type) ? food_type : 'veg';
+  const r = db.prepare(
+    `INSERT INTO menu_items (cafe_id,name,price,category,prep_mins,image_url,food_type,spicy,is_combo,station,description)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(req.cafe_id, name.trim(), Math.round(price), (category || 'General').trim(), parseInt(prep_mins) || 10,
+        (image_url || '').toString().slice(0, 500) || null, ft, Math.max(0, Math.min(3, parseInt(spicy) || 0)),
+        is_combo ? 1 : 0, (station || 'Kitchen').toString().slice(0, 40), (description || '').toString().slice(0, 200) || null);
+  audit(req.cafe_id, req.owner_email, 'menu.add', name);
   res.json({ ok: true, id: r.lastInsertRowid });
 });
 
 app.post('/api/menu/:id', auth.requireAuth, (req, res) => {
   const m = db.prepare('SELECT cafe_id FROM menu_items WHERE id = ?').get(req.params.id);
   if (!m || m.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not your item' });
-  const { name, price, category, prep_mins } = req.body;
+  const { name, price, category, prep_mins, image_url, food_type, spicy, is_combo, station, description } = req.body;
   if (!name || !(price >= 0)) return res.status(400).json({ error: 'Name and price required' });
-  db.prepare('UPDATE menu_items SET name=?, price=?, category=?, prep_mins=? WHERE id=?')
-    .run(name.trim(), Math.round(price), (category || 'General').trim(), parseInt(prep_mins) || 10, req.params.id);
+  const ft = FOOD_TYPES.includes(food_type) ? food_type : 'veg';
+  db.prepare(
+    `UPDATE menu_items SET name=?, price=?, category=?, prep_mins=?, image_url=?, food_type=?, spicy=?, is_combo=?, station=?, description=? WHERE id=?`
+  ).run(name.trim(), Math.round(price), (category || 'General').trim(), parseInt(prep_mins) || 10,
+        (image_url || '').toString().slice(0, 500) || null, ft, Math.max(0, Math.min(3, parseInt(spicy) || 0)),
+        is_combo ? 1 : 0, (station || 'Kitchen').toString().slice(0, 40), (description || '').toString().slice(0, 200) || null,
+        req.params.id);
+  audit(req.cafe_id, req.owner_email, 'menu.edit', name);
+  res.json({ ok: true });
+});
+
+// Toggle order priority (rush flag)
+app.post('/api/order/:id/priority', auth.requireAuth, (req, res) => {
+  const o = db.prepare('SELECT cafe_id FROM orders WHERE id = ?').get(req.params.id);
+  if (!o || o.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not your order' });
+  db.prepare('UPDATE orders SET priority=? WHERE id=?').run(req.body.priority ? 1 : 0, req.params.id);
   res.json({ ok: true });
 });
 
@@ -452,17 +582,216 @@ app.get('/api/cafe/:cafeId/stats', auth.requireAuth, (req, res) => {
 app.get('/api/cafe/:cafeId/settings', auth.requireAuth, (req, res) => {
   const cafe = getCafe(req.params.cafeId);
   if (!cafe) return res.status(404).json({ error: 'Cafe not found' });
-  res.json({ name: cafe.name, upi_id: cafe.upi_id, loyalty_rate: cafe.loyalty_rate });
+  res.json({ name: cafe.name, upi_id: cafe.upi_id, loyalty_rate: cafe.loyalty_rate,
+             logo_url: cafe.logo_url, brand_color: cafe.brand_color || '#b5651d',
+             google_review_url: cafe.google_review_url });
 });
 
 app.post('/api/cafe/:cafeId/settings', auth.requireAuth, (req, res) => {
-  const { name, upi_id, loyalty_rate } = req.body;
+  const { name, upi_id, loyalty_rate, logo_url, brand_color, google_review_url } = req.body;
   if (!name) return res.status(400).json({ error: 'Cafe name required' });
   const rate = parseInt(loyalty_rate);
   if (isNaN(rate) || rate < 0 || rate > 100) return res.status(400).json({ error: 'Loyalty rate must be 0-100' });
-  db.prepare('UPDATE cafes SET name=?, upi_id=?, loyalty_rate=? WHERE id=?')
-    .run(name.trim(), upi_id || null, rate, req.params.cafeId);
+  const color = /^#[0-9a-fA-F]{6}$/.test(brand_color || '') ? brand_color : '#b5651d';
+  db.prepare('UPDATE cafes SET name=?, upi_id=?, loyalty_rate=?, logo_url=?, brand_color=?, google_review_url=? WHERE id=?')
+    .run(name.trim(), upi_id || null, rate, (logo_url || '').toString().slice(0, 500) || null, color,
+         (google_review_url || '').toString().slice(0, 500) || null, req.params.cafeId);
+  audit(req.cafe_id, req.owner_email, 'settings.update', null);
   res.json({ ok: true });
+});
+
+// ===== TRIAL / PLAN =====
+app.get('/api/cafe/:cafeId/trial', auth.requireAuth, (req, res) => {
+  const cafe = getCafe(req.params.cafeId);
+  let daysLeft = null;
+  if (cafe.trial_ends) {
+    const ms = new Date(cafe.trial_ends + 'Z').getTime() - Date.now();
+    daysLeft = Math.ceil(ms / 86400000);
+  }
+  res.json({ plan: cafe.plan, trial_ends: cafe.trial_ends, days_left: daysLeft, expired: cafe.plan === 'free' && daysLeft !== null && daysLeft <= 0 });
+});
+
+// ===== WAITER CALLS (owner) =====
+app.get('/api/cafe/:cafeId/waiter-calls', auth.requireAuth, (req, res) => {
+  res.json(db.prepare("SELECT * FROM waiter_calls WHERE cafe_id=? AND resolved=0 ORDER BY created_at DESC").all(req.params.cafeId));
+});
+app.post('/api/waiter-calls/:id/resolve', auth.requireAuth, (req, res) => {
+  const c = db.prepare('SELECT cafe_id FROM waiter_calls WHERE id=?').get(req.params.id);
+  if (!c || c.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not yours' });
+  db.prepare('UPDATE waiter_calls SET resolved=1 WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// ===== REPORTS / ANALYTICS =====
+// Daily closing report
+app.get('/api/cafe/:cafeId/report', auth.requireAuth, (req, res) => {
+  const c = req.params.cafeId;
+  const day = req.query.date || null; // YYYY-MM-DD; default today
+  const dateExpr = day ? "date(created_at)=?" : "date(created_at)=date('now')";
+  const args = day ? [c, day] : [c];
+  const sum = db.prepare(`SELECT COUNT(*) orders, COALESCE(SUM(total),0) revenue,
+      COALESCE(SUM(CASE WHEN pay_method='cash' THEN total ELSE 0 END),0) cash,
+      COALESCE(SUM(CASE WHEN pay_method!='cash' THEN total ELSE 0 END),0) upi
+      FROM orders WHERE cafe_id=? AND ${dateExpr}`).get(...args);
+  const top = db.prepare(`SELECT oi.name, SUM(oi.qty) qty, SUM(oi.qty*oi.price) revenue
+      FROM order_items oi JOIN orders o ON o.id=oi.order_id
+      WHERE o.cafe_id=? AND ${dateExpr.replace('created_at','o.created_at')}
+      GROUP BY oi.name ORDER BY qty DESC LIMIT 5`).all(...args);
+  const exp = db.prepare(`SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE cafe_id=? AND ${day ? 'spent_on=?' : "spent_on=date('now')"}`).get(...args);
+  res.json({ date: day || 'today', ...sum, expenses: exp.total, profit: sum.revenue - exp.total, top_items: top });
+});
+
+// Revenue series (last N days) for charts
+app.get('/api/cafe/:cafeId/series', auth.requireAuth, (req, res) => {
+  const days = Math.min(parseInt(req.query.days) || 14, 90);
+  const rows = db.prepare(
+    `SELECT date(created_at) d, COUNT(*) orders, COALESCE(SUM(total),0) revenue
+     FROM orders WHERE cafe_id=? AND created_at >= datetime('now', ?)
+     GROUP BY date(created_at) ORDER BY d`
+  ).all(req.params.cafeId, `-${days} days`);
+  res.json(rows);
+});
+
+// Best & worst sellers
+app.get('/api/cafe/:cafeId/sellers', auth.requireAuth, (req, res) => {
+  const rows = db.prepare(
+    `SELECT m.id, m.name, COALESCE(SUM(oi.qty),0) qty, COALESCE(SUM(oi.qty*oi.price),0) revenue
+     FROM menu_items m LEFT JOIN order_items oi ON oi.item_id=m.id
+       LEFT JOIN orders o ON o.id=oi.order_id AND o.created_at >= datetime('now','-30 days')
+     WHERE m.cafe_id=? GROUP BY m.id ORDER BY qty DESC`
+  ).all(req.params.cafeId);
+  res.json({ best: rows.slice(0, 5), worst: rows.filter(r => r.qty === 0).slice(0, 10), all: rows });
+});
+
+// Peak hours heatmap (orders by hour of day, last 30 days)
+app.get('/api/cafe/:cafeId/peak-hours', auth.requireAuth, (req, res) => {
+  const rows = db.prepare(
+    `SELECT CAST(strftime('%H', created_at, 'localtime') AS INTEGER) hour, COUNT(*) orders
+     FROM orders WHERE cafe_id=? AND created_at >= datetime('now','-30 days')
+     GROUP BY hour ORDER BY hour`
+  ).all(req.params.cafeId);
+  const map = Array.from({ length: 24 }, (_, h) => ({ hour: h, orders: 0 }));
+  for (const r of rows) if (map[r.hour]) map[r.hour].orders = r.orders;
+  res.json(map);
+});
+
+// ===== STAFF (owner only) =====
+app.get('/api/cafe/:cafeId/staff', auth.requireAuth, (req, res) => {
+  res.json(db.prepare('SELECT id,name,email,role,created_at FROM staff WHERE cafe_id=? ORDER BY created_at').all(req.params.cafeId));
+});
+app.post('/api/cafe/:cafeId/staff', auth.requireAuth, (req, res) => {
+  const { name, email, password, role } = req.body;
+  if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password required' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email' });
+  if (db.prepare('SELECT 1 FROM owners WHERE email=?').get(email) || db.prepare('SELECT 1 FROM staff WHERE email=?').get(email))
+    return res.status(409).json({ error: 'Email already in use' });
+  const r = db.prepare('INSERT INTO staff (cafe_id,name,email,pass_hash,role) VALUES (?,?,?,?,?)')
+    .run(req.cafe_id, name.trim(), email, auth.hashPassword(password), ['waiter','manager'].includes(role) ? role : 'waiter');
+  audit(req.cafe_id, req.owner_email, 'staff.add', email);
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+app.post('/api/staff/:id/delete', auth.requireAuth, (req, res) => {
+  const s = db.prepare('SELECT cafe_id,email FROM staff WHERE id=?').get(req.params.id);
+  if (!s || s.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not yours' });
+  db.prepare('DELETE FROM staff WHERE id=?').run(req.params.id);
+  audit(req.cafe_id, req.owner_email, 'staff.remove', s.email);
+  res.json({ ok: true });
+});
+
+// ===== EXPENSES =====
+app.get('/api/cafe/:cafeId/expenses', auth.requireAuth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM expenses WHERE cafe_id=? ORDER BY spent_on DESC, id DESC LIMIT 200').all(req.params.cafeId));
+});
+app.post('/api/cafe/:cafeId/expenses', auth.requireAuth, (req, res) => {
+  const { label, amount, category, spent_on } = req.body;
+  if (!label || !(amount > 0)) return res.status(400).json({ error: 'Label and amount required' });
+  const r = db.prepare('INSERT INTO expenses (cafe_id,label,amount,category,spent_on) VALUES (?,?,?,?,?)')
+    .run(req.cafe_id, label.trim().slice(0, 80), Math.round(amount), (category || 'General').slice(0, 40), spent_on || new Date().toISOString().slice(0, 10));
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+app.post('/api/expenses/:id/delete', auth.requireAuth, (req, res) => {
+  const e = db.prepare('SELECT cafe_id FROM expenses WHERE id=?').get(req.params.id);
+  if (!e || e.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not yours' });
+  db.prepare('DELETE FROM expenses WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// ===== LOYALTY REDEMPTION =====
+app.post('/api/cafe/:cafeId/redeem', auth.requireAuth, (req, res) => {
+  const { phone, points } = req.body;
+  const cust = db.prepare('SELECT * FROM customers WHERE cafe_id=? AND phone=?').get(req.params.cafeId, phone);
+  if (!cust) return res.status(404).json({ error: 'Customer not found' });
+  const p = parseInt(points);
+  if (!(p > 0) || p > cust.points) return res.status(400).json({ error: `Customer has only ${cust.points} points` });
+  db.prepare('UPDATE customers SET points=points-?, redeemed=redeemed+? WHERE id=?').run(p, p, cust.id);
+  audit(req.cafe_id, req.owner_email, 'loyalty.redeem', `${phone}:${p}pts`);
+  res.json({ ok: true, remaining: cust.points - p, rupees_off: (p / 100).toFixed(2) });
+});
+
+// ===== AUDIT LOG (owner) =====
+app.get('/api/cafe/:cafeId/audit', auth.requireAuth, (req, res) => {
+  res.json(db.prepare('SELECT actor,action,detail,created_at FROM audit_log WHERE cafe_id=? ORDER BY id DESC LIMIT 100').all(req.params.cafeId));
+});
+
+// ===== FULL DATA EXPORT (backup) =====
+app.get('/api/cafe/:cafeId/backup', auth.requireAuth, (req, res) => {
+  const c = req.params.cafeId;
+  const dump = {
+    exported_at: new Date().toISOString(),
+    cafe: getCafe(c),
+    menu: db.prepare('SELECT * FROM menu_items WHERE cafe_id=?').all(c),
+    seats: db.prepare('SELECT * FROM seats WHERE cafe_id=?').all(c),
+    customers: db.prepare('SELECT * FROM customers WHERE cafe_id=?').all(c),
+    orders: db.prepare('SELECT * FROM orders WHERE cafe_id=?').all(c),
+    order_items: db.prepare('SELECT oi.* FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.cafe_id=?').all(c),
+    expenses: db.prepare('SELECT * FROM expenses WHERE cafe_id=?').all(c),
+    staff: db.prepare('SELECT id,name,email,role FROM staff WHERE cafe_id=?').all(c),
+  };
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="scanserve-backup-${c}.json"`);
+  res.send(JSON.stringify(dump, null, 2));
+});
+
+// ===== ACCOUNT DELETION (GDPR-style) =====
+app.post('/api/cafe/:cafeId/delete-account', auth.requireAuth, (req, res) => {
+  const c = req.params.cafeId;
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE cafe_id=?)').run(c);
+    for (const t of ['orders', 'customers', 'menu_items', 'seats', 'expenses', 'staff', 'waiter_calls', 'audit_log', 'sessions', 'owners', 'cafes']) {
+      const col = t === 'cafes' ? 'id' : 'cafe_id';
+      try { db.prepare(`DELETE FROM ${t} WHERE ${col}=?`).run(c); } catch {}
+    }
+  });
+  tx();
+  res.json({ ok: true, message: 'Account and all data permanently deleted.' });
+});
+
+// ===== DEMO SANDBOX =====
+app.post('/api/demo', authLimiter, (req, res) => {
+  const crypto = require('crypto');
+  const cafeId = 'demo_' + crypto.randomBytes(3).toString('hex');
+  const email = `demo_${cafeId}@scanserve.app`;
+  const tx = db.transaction(() => {
+    db.prepare("INSERT INTO cafes (id,name,owner_email,upi_id,trial_ends) VALUES (?,?,?,?,datetime('now','+14 days'))")
+      .run(cafeId, 'Demo Cafe', email, 'democafe@upi');
+    const r = db.prepare('INSERT INTO owners (cafe_id,email,pass_hash,email_verified) VALUES (?,?,?,1)')
+      .run(cafeId, email, auth.hashPassword(crypto.randomBytes(8).toString('hex')));
+    return { id: r.lastInsertRowid, cafe_id: cafeId };
+  });
+  const owner = tx();
+  seedStarterData(cafeId);
+  // a couple of sample completed orders so charts/reports aren't empty
+  const seats = db.prepare('SELECT id,label FROM seats WHERE cafe_id=?').all(cafeId);
+  const items = db.prepare('SELECT * FROM menu_items WHERE cafe_id=?').all(cafeId);
+  for (let i = 0; i < 6; i++) {
+    const it = items[i % items.length];
+    const o = db.prepare("INSERT INTO orders (cafe_id,seat_id,seat_label,status,total,pay_method,paid,created_at) VALUES (?,?,?,?,?,?,1,datetime('now',?))")
+      .run(cafeId, seats[i % seats.length].id, seats[i % seats.length].label, 'served', it.price, i % 2 ? 'cash' : 'upi', `-${i} days`);
+    db.prepare('INSERT INTO order_items (order_id,item_id,name,price,qty) VALUES (?,?,?,?,1)').run(o.lastInsertRowid, it.id, it.name, it.price);
+  }
+  const token = auth.createSession(owner);
+  res.json({ ok: true, token, cafe_id: cafeId, cafe_name: 'Demo Cafe', is_new: false, demo: true });
 });
 
 const PORT = process.env.PORT || 3000;

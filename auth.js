@@ -38,6 +38,9 @@ function requireAuth(req, res, next) {
     return res.status(403).json({ error: 'Not your cafe' });
   }
   req.cafe_id = s.cafe_id;
+  req.owner_id = s.owner_id;
+  const o = db.prepare('SELECT email FROM owners WHERE id = ?').get(s.owner_id);
+  req.owner_email = o ? o.email : (db.prepare('SELECT email FROM staff WHERE id = ?').get(s.owner_id)?.email || 'staff');
   next();
 }
 

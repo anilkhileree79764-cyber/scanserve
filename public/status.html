@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order Status — ScanServe</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,sans-serif}
+  body{margin:0;background:#faf7f2;color:#2b2117;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+  .box{background:#fff;border:1px solid #ece4d8;border-radius:18px;padding:30px;width:100%;max-width:380px;text-align:center}
+  h1{color:#b5651d;margin:0 0 6px;font-size:20px}
+  .clock{font-size:54px;font-weight:800;color:#b5651d;margin:10px 0 0}
+  .lbl{color:#8a7f72;font-size:14px}
+  .steps{display:flex;justify-content:space-between;margin:24px 0 10px}
+  .step{flex:1;font-size:12px;color:#bbb}
+  .step.done{color:#2e9e5b;font-weight:700}
+  .dot{width:14px;height:14px;border-radius:50%;background:#ddd;margin:0 auto 6px}
+  .step.done .dot{background:#2e9e5b}
+  .msg{font-size:18px;font-weight:700;margin-top:12px}
+  a{display:block;margin-top:18px;color:#b5651d;font-size:14px}
+</style></head>
+<body>
+<div class="box">
+  <h1 id="title">Your order</h1>
+  <div class="msg" id="msg">Loading…</div>
+  <div class="clock" id="clock">–</div>
+  <div class="lbl">minutes left (approx)</div>
+  <div class="steps" id="steps">
+    <div class="step" data-s="placed"><div class="dot"></div>Received</div>
+    <div class="step" data-s="preparing"><div class="dot"></div>Preparing</div>
+    <div class="step" data-s="ready"><div class="dot"></div>Ready</div>
+    <div class="step" data-s="served"><div class="dot"></div>Served</div>
+  </div>
+  <a id="receipt" href="#">View / print receipt →</a>
+</div>
+<script>
+const id = new URLSearchParams(location.search).get('order');
+const ORDER = ['placed','preparing','ready','served'];
+const MSG = {placed:'✅ Order received',preparing:'👨‍🍳 Being prepared',ready:'🔔 Ready! Come collect',served:'😊 Enjoy your meal!'};
+document.getElementById('receipt').href = `/receipt.html?order=${id}`;
+async function poll(){
+  if(!id){ document.getElementById('msg').textContent='No order specified.'; return; }
+  try{
+    const r=await fetch(`/api/order/${id}/status`); if(!r.ok){document.getElementById('msg').textContent='Order not found.';return;}
+    const d=await r.json();
+    document.getElementById('msg').textContent=MSG[d.status]||d.status;
+    document.getElementById('clock').textContent=d.status==='served'?'✓':d.remaining_mins;
+    const idx=ORDER.indexOf(d.status);
+    document.querySelectorAll('.step').forEach((el,i)=>el.classList.toggle('done',i<=idx));
+    if(d.status!=='served') setTimeout(poll,15000);
+  }catch{ setTimeout(poll,15000); }
+}
+poll();
+</script>
+</body></html>

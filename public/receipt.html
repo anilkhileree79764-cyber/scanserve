@@ -41,13 +41,20 @@ async function load() {
     <div class="info">${o.created_at.replace('T',' ').slice(0,16)}</div>
     <span class="status ${o.status}">${statusLabel[o.status] || o.status}</span>
     <hr class="divider">`;
+  const esc = s => String(s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
   for (const it of items) {
-    html += `<div class="row"><span>${it.qty}x ${it.name}</span><span>₹${(it.price * it.qty / 100).toFixed(0)}</span></div>`;
+    html += `<div class="row"><span>${it.qty}x ${esc(it.name)}</span><span>₹${(it.price * it.qty / 100).toFixed(0)}</span></div>`;
+    if (it.note) html += `<div class="info" style="margin:-4px 0 8px">↳ ${esc(it.note)}</div>`;
   }
+  if (o.notes) html += `<div class="info">📝 ${esc(o.notes)}</div>`;
   html += `<hr class="divider"><div class="row total"><span>Total</span><span>₹${(o.total/100).toFixed(0)}</span></div>`;
   html += `<div class="row"><span>Payment</span><span>${o.paid ? '✅ Paid' : '⏳ Pay at counter'}</span></div>`;
   if (!o.paid && cafe.upi_id) {
-    html += `<div class="pay-note">Pay at the counter via UPI: <b>${cafe.upi_id}</b></div>`;
+    html += `<div class="pay-note">Pay at the counter via UPI: <b>${esc(cafe.upi_id)}</b></div>`;
+  }
+  // Google review nudge — only for happy (served) customers
+  if (cafe.google_review_url && o.status === 'served') {
+    html += `<a href="${esc(cafe.google_review_url)}" target="_blank" style="display:block;text-align:center;margin-top:14px;background:#fff3cd;color:#856404;padding:12px;border-radius:10px;text-decoration:none;font-weight:600">⭐ Loved it? Leave us a Google review!</a>`;
   }
   html += `<button onclick="window.print()">🖨 Print receipt</button>`;
   document.getElementById('content').innerHTML = html;

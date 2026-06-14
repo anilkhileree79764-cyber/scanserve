@@ -56,24 +56,72 @@
   .badge-preparing{background:#cfe2ff;color:#084298}
   .badge-ready{background:#d1e7dd;color:#0a3622}
   .badge-served{background:#f8f9fa;color:#6c757d}
+  /* banners */
+  .banner{padding:10px 20px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .banner.trial{background:#fff3cd;color:#856404}
+  .banner.trial.expired{background:#fde8e6;color:#c0392b}
+  .banner.waiter{background:#e74c3c;color:#fff;font-weight:600}
+  .banner button{background:rgba(0,0,0,.12);color:inherit;border:0;border-radius:8px;padding:6px 12px;cursor:pointer}
+  /* overdue + priority order cards */
+  .card.overdue{border-left-color:#e74c3c!important;animation:pulse 1.4s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(231,76,60,.0)}50%{box-shadow:0 0 0 4px rgba(231,76,60,.18)}}
+  .rushflag{background:#e74c3c;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;margin-left:6px}
+  .stationtag{background:#eef1f5;color:#555;font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;margin-left:4px}
+  .overdue-time{color:#e74c3c;font-weight:700}
+  .rushbtn{background:#fde8e6;color:#c0392b;border:0;border-radius:8px;padding:8px;font-size:13px;cursor:pointer}
+  /* reports */
+  .chart{display:flex;align-items:flex-end;gap:6px;height:160px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+  .bar-col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;height:100%}
+  .bar-fill{width:70%;background:var(--accent);border-radius:4px 4px 0 0;min-height:2px;transition:height .3s}
+  .bar-lbl{font-size:10px;color:var(--muted)}
+  .heat{display:grid;grid-template-columns:repeat(12,1fr);gap:4px}
+  .heat .h{aspect-ratio:1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff}
+  .report-cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .rc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 18px;flex:1;min-width:130px}
+  .rc b{display:block;font-size:22px}.rc span{color:var(--muted);font-size:12px}
+  .station-filter{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .station-filter button{padding:6px 12px;border-radius:16px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:13px}
+  .station-filter button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  /* onboarding tour */
+  .tour{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:center;justify-content:center;padding:20px}
+  .tour.show{display:flex}
+  .tour-box{background:#fff;border-radius:16px;padding:26px;max-width:380px;text-align:center}
+  .tour-box h2{color:var(--accent);margin:0 0 8px}
+  .tour-box p{color:#555;font-size:14px;line-height:1.5}
+  .tour-box button{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:11px 22px;font-size:15px;cursor:pointer;margin-top:12px}
+  .tour-skip{display:block;margin-top:10px;color:var(--muted);font-size:13px;cursor:pointer;background:none;border:0;width:100%}
+  @media(max-width:640px){
+    .stat,.rc{min-width:calc(50% - 6px)}
+    .grid{grid-template-columns:1fr}
+    table{font-size:13px}th,td{padding:8px 8px}
+    .tabs{overflow-x:auto;flex-wrap:nowrap}
+    header h1{font-size:15px}
+  }
 </style>
 </head>
 <body>
 <header>
   <h1 id="cafeTitle">Dashboard</h1>
-  <div style="display:flex;gap:8px">
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="ghost" onclick="enableNotifs()" id="notifBtn" title="Get a desktop alert for every new order">🔔 Alerts</button>
     <a href="/qr.html">Print QR codes</a>
     <button class="ghost" onclick="logout()">Log out</button>
   </div>
 </header>
 
+<div class="banner trial hide" id="trialBanner"></div>
+<div class="banner waiter hide" id="waiterBanner"></div>
+
 <div class="tabs">
   <div class="tab on" data-t="orders">Live Orders</div>
   <div class="tab" data-t="kitchen">Kitchen 🌙</div>
   <div class="tab" data-t="menu">Menu</div>
+  <div class="tab" data-t="reports">Reports 📊</div>
   <div class="tab" data-t="history">History</div>
   <div class="tab" data-t="customers" title="All customers who have ordered — with loyalty points and visit count">Customers</div>
   <div class="tab" data-t="winback" title="Send a discount offer to customers who haven't visited in 30+ days">Win-back 💌</div>
+  <div class="tab" data-t="expenses">Expenses 💸</div>
+  <div class="tab" data-t="staff">Staff 👥</div>
   <div class="tab" data-t="tables">Tables</div>
   <div class="tab" data-t="settings">Settings</div>
 </div>
@@ -91,6 +139,7 @@
       <span style="font-size:14px;color:var(--muted)">Active kitchen orders</span>
       <button id="darkToggle" onclick="toggleDark()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px">🌙 Dark mode</button>
     </div>
+    <div class="station-filter" id="stationFilter"></div>
     <div class="grid" id="kitchenGrid"></div>
   </div>
 
@@ -101,12 +150,18 @@
     <div class="additem">
       <input id="niName" placeholder="Item name" maxlength="100">
       <input id="niPrice" type="number" placeholder="Price (₹)" style="max-width:90px" min="0">
-      <input id="niCat" placeholder="Category" style="max-width:120px">
+      <input id="niCat" placeholder="Category" style="max-width:110px">
       <input id="niPrep" type="number" placeholder="Prep min" style="max-width:80px" min="1">
+      <select id="niType" style="max-width:110px;padding:9px;border:1px solid var(--line);border-radius:8px"><option value="veg">🟢 Veg</option><option value="nonveg">🔴 Non-veg</option><option value="egg">🟡 Egg</option></select>
+      <select id="niSpicy" style="max-width:100px;padding:9px;border:1px solid var(--line);border-radius:8px"><option value="0">Not spicy</option><option value="1">🌶️ Mild</option><option value="2">🌶️🌶️ Medium</option><option value="3">🌶️🌶️🌶️ Hot</option></select>
+      <input id="niStation" placeholder="Station (Kitchen/Bar)" style="max-width:140px" value="Kitchen">
+      <input id="niImg" placeholder="Photo URL (optional)" style="min-width:160px">
+      <input id="niDesc" placeholder="Short description (optional)" style="min-width:160px">
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input id="niCombo" type="checkbox" style="width:auto">Combo</label>
       <button class="addbtn" onclick="addItem()">+ Add item</button>
     </div>
     <table id="menuTable">
-      <thead><tr><th>Name</th><th>Price (₹)</th><th>Category</th><th>Prep (min)</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Photo</th><th>Name</th><th>₹</th><th>Category</th><th>Prep</th><th>Type</th><th>Spicy</th><th>Station</th><th>Status</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -129,7 +184,7 @@
 
   <div id="customers" class="pane hide">
     <table id="custTable">
-      <thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Visits</th><th>Last visit</th></tr></thead>
+      <thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Visits</th><th>Last visit</th><th>Loyalty</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -143,6 +198,60 @@
       <thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Last visit</th></tr></thead>
       <tbody></tbody>
     </table>
+  </div>
+
+  <div id="reports" class="pane hide">
+    <div class="filters">
+      <span style="font-weight:600">Daily report for:</span>
+      <input type="date" id="rDate">
+      <button onclick="drawReports()">Show</button>
+      <a href="#" onclick="downloadBackup(event)" style="margin-left:auto">⬇ Backup all my data</a>
+    </div>
+    <div class="report-cards" id="reportCards"></div>
+    <h3 style="margin:6px 0">Top items that day</h3>
+    <table id="topItemsTable"><thead><tr><th>Item</th><th>Sold</th><th>Revenue</th></tr></thead><tbody></tbody></table>
+    <h3 style="margin:22px 0 8px">Revenue — last 14 days</h3>
+    <div class="chart" id="revChart"></div>
+    <h3 style="margin:22px 0 8px">Busiest hours (last 30 days)</h3>
+    <div class="heat" id="heatMap"></div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:22px">
+      <div style="flex:1;min-width:260px">
+        <h3 style="margin:0 0 8px">⭐ Best sellers</h3>
+        <table id="bestTable"><thead><tr><th>Item</th><th>Sold (30d)</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div style="flex:1;min-width:260px">
+        <h3 style="margin:0 0 8px">😴 Not selling — consider dropping</h3>
+        <table id="worstTable"><thead><tr><th>Item</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div id="expenses" class="pane hide" style="max-width:640px">
+    <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
+      <span>Track daily expenses to see your real profit (revenue − expenses) in the Reports tab.</span>
+    </div>
+    <div class="additem">
+      <input id="exLabel" placeholder="What for? (e.g. Milk, Gas, Salary)" style="flex:1">
+      <input id="exAmount" type="number" placeholder="Amount (₹)" style="max-width:120px" min="1">
+      <input id="exCat" placeholder="Category" style="max-width:120px">
+      <input id="exDate" type="date" style="max-width:150px">
+      <button class="addbtn" onclick="addExpense()">+ Add</button>
+    </div>
+    <table id="expTable"><thead><tr><th>Date</th><th>Item</th><th>Category</th><th>Amount</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div id="staff" class="pane hide" style="max-width:640px">
+    <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
+      <span>Add staff logins (waiter or manager). They log in at the same page and see this dashboard. Only you (owner) can manage staff.</span>
+    </div>
+    <div class="additem">
+      <input id="stName" placeholder="Staff name" style="flex:1">
+      <input id="stEmail" type="email" placeholder="Login email" style="flex:1">
+      <input id="stPass" type="password" placeholder="Password (min 8)" style="max-width:160px">
+      <select id="stRole" style="max-width:120px;padding:9px;border:1px solid var(--line);border-radius:8px"><option value="waiter">Waiter</option><option value="manager">Manager</option></select>
+      <button class="addbtn" onclick="addStaff()">+ Add</button>
+    </div>
+    <table id="staffTable"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead><tbody></tbody></table>
   </div>
 
   <div id="tables" class="pane hide" style="max-width:520px">
@@ -175,8 +284,34 @@
       <label>Loyalty points per ₹100 spent <span style="font-weight:400;color:var(--muted)">(0 to disable)</span></label>
       <input id="sLoyalty" type="number" min="0" max="100" placeholder="10">
     </div>
+    <div class="field">
+      <label>Logo URL <span style="font-weight:400;color:var(--muted)">(shown on the order page)</span></label>
+      <input id="sLogo" placeholder="https://...">
+    </div>
+    <div class="field">
+      <label>Brand colour <span style="font-weight:400;color:var(--muted)">(your order page accent)</span></label>
+      <input id="sColor" type="color" value="#b5651d" style="height:44px;padding:4px">
+    </div>
+    <div class="field">
+      <label>Google review link <span style="font-weight:400;color:var(--muted)">(happy customers are nudged to review)</span></label>
+      <input id="sReview" placeholder="https://g.page/r/...">
+    </div>
     <button class="savesettings" onclick="saveSettings()">Save settings</button>
     <div id="settingsMsg" style="margin-top:10px;font-size:14px;color:var(--green)"></div>
+
+    <hr style="border:none;border-top:1px solid var(--line);margin:26px 0">
+    <h3 style="color:#c0392b;margin:0 0 6px">Danger zone</h3>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 10px">Permanently delete your cafe and all its data. This cannot be undone. Download a backup first (Reports tab).</p>
+    <button onclick="deleteAccount()" style="background:#fde8e6;color:#c0392b;border:1px solid #f5b7b1;border-radius:10px;padding:11px 20px;font-size:14px;cursor:pointer;font-weight:600">Delete my account</button>
+  </div>
+</div>
+
+<div class="tour" id="tour">
+  <div class="tour-box">
+    <h2 id="tourTitle">Welcome! 👋</h2>
+    <p id="tourBody">Let's take a 30-second tour of your dashboard.</p>
+    <button onclick="tourNext()" id="tourBtn">Start tour →</button>
+    <button class="tour-skip" onclick="endTour()">Skip</button>
   </div>
 </div>
 
@@ -250,12 +385,17 @@ function init() {
   const week = new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0];
   document.getElementById('hFrom').value = week;
   document.getElementById('hTo').value = today;
+  document.getElementById('rDate').value = today;
+  document.getElementById('exDate').value = today;
+  if (('Notification' in window) && Notification.permission === 'granted') document.getElementById('notifBtn').textContent = '🔔 Alerts on';
   applyDark();
+  loadTrial();
   refresh();
   // Auto-refresh every 10s; play sound if new orders arrived
   setInterval(() => {
     const which = document.querySelector('.tab.on').dataset.t;
-    if (!['menu', 'settings', 'history'].includes(which)) refresh();
+    if (!['menu', 'settings', 'history', 'reports', 'expenses', 'staff'].includes(which)) refresh();
+    else loadWaiterCalls();
   }, 10000);
   // Search filter
   document.getElementById('orderSearch').addEventListener('input', filterOrders);
@@ -289,12 +429,21 @@ async function refresh() {
      <div class="stat"><b>${s.active_orders}</b><span>Active now</span></div>
      <div class="stat"><b>${stars}</b><span>Avg rating</span></div>`;
 
-  const fns = { orders: drawOrders, kitchen: drawKitchen, menu: drawMenu, history: loadHistory, customers: drawCustomers, winback: drawWinback, tables: drawTables, settings: loadSettings };
+  const fns = { orders: drawOrders, kitchen: drawKitchen, menu: drawMenu, reports: drawReports, history: loadHistory, customers: drawCustomers, winback: drawWinback, expenses: drawExpenses, staff: drawStaff, tables: drawTables, settings: loadSettings };
   if (fns[which]) fns[which]();
+  loadWaiterCalls();
 }
 
 const NEXT = { placed: 'preparing', preparing: 'ready', ready: 'served' };
 const LABEL = { placed: 'Start preparing', preparing: 'Mark ready', ready: 'Mark served' };
+
+// minutes since an order was placed
+function elapsedMins(o) {
+  return Math.floor((Date.now() - new Date(o.created_at.replace(' ', 'T') + 'Z').getTime()) / 60000);
+}
+function isOverdue(o) {
+  return ['placed', 'preparing'].includes(o.status) && elapsedMins(o) > (o.eta_mins || 10);
+}
 
 async function drawOrders() {
   const r = await api(`/api/cafe/${CAFE}/orders`);
@@ -302,31 +451,47 @@ async function drawOrders() {
   const orders = await r.json();
   const grid = document.getElementById('ordersGrid');
 
-  // Detect new orders and play sound
+  // Detect new orders → sound + desktop notification
   const newIds = new Set(orders.filter(o => o.status === 'placed').map(o => o.id));
   if (lastOrderIds.size > 0) {
-    for (const id of newIds) {
-      if (!lastOrderIds.has(id)) { playBeep(); break; }
+    for (const o of orders) {
+      if (o.status === 'placed' && !lastOrderIds.has(o.id)) {
+        playBeep();
+        notifyNewOrder(o);
+        break;
+      }
     }
   }
   lastOrderIds = newIds;
 
   grid.innerHTML = '';
   if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">No orders yet. Share your QR codes with customers!</p>'; return; }
+  // priority + overdue first
+  orders.sort((a, b) => (b.priority - a.priority) || (isOverdue(b) - isOverdue(a)) || (a.id - b.id));
   for (const x of orders) {
     const card = document.createElement('div');
-    card.className = `card ${x.status}`;
-    // Search index: order id, seat, item names
+    const overdue = isOverdue(x);
+    card.className = `card ${x.status}` + (overdue ? ' overdue' : '');
     const itemText = x.items.map(i => i.name.toLowerCase()).join(' ');
     card.dataset.search = `#${x.id} ${(x.seat_label||'').toLowerCase()} ${itemText}`;
 
     const h = document.createElement('h3');
-    const l = document.createElement('span'); l.textContent = `#${x.id} — ${x.seat_label}`;
+    const l = document.createElement('span');
+    l.textContent = `#${x.id} — ${x.seat_label}`;
+    if (x.priority) { const f = document.createElement('span'); f.className = 'rushflag'; f.textContent = 'RUSH'; l.appendChild(f); }
+    (x.stations || []).forEach(s => { const t = document.createElement('span'); t.className = 'stationtag'; t.textContent = s; l.appendChild(t); });
     const r2 = document.createElement('span'); r2.textContent = money(x.total);
     h.append(l, r2);
     const meta = document.createElement('div'); meta.className = 'meta';
-    meta.textContent = x.status.toUpperCase() + (x.paid ? ' · PAID ✓' : '');
-    const items = x.items.map(i => { const d = document.createElement('div'); d.className = 'li'; d.textContent = `${i.qty}× ${i.name}`; return d; });
+    const mins = elapsedMins(x);
+    meta.innerHTML = x.status.toUpperCase() + (x.paid ? ' · PAID ✓' : '') +
+      (['placed','preparing'].includes(x.status) ? ` · <span class="${overdue?'overdue-time':''}">${mins} min ago${overdue?' ⚠️ OVERDUE':''}</span>` : '');
+    const items = x.items.map(i => {
+      const d = document.createElement('div'); d.className = 'li';
+      d.textContent = `${i.qty}× ${i.name}`;
+      if (i.note) { const n = document.createElement('span'); n.style.cssText='color:#b5651d;font-size:12px'; n.textContent = ' — ' + i.note; d.appendChild(n); }
+      return d;
+    });
     const elems = [h, meta, ...items];
     if (x.notes) {
       const note = document.createElement('div');
@@ -341,6 +506,12 @@ async function drawOrders() {
       btn.onclick = () => adv(x.id, NEXT[x.status]);
       act.appendChild(btn);
     }
+    if (['placed','preparing'].includes(x.status)) {
+      const rb = document.createElement('button'); rb.className = 'rushbtn';
+      rb.textContent = x.priority ? '✓ Rush' : '⚡ Rush';
+      rb.onclick = () => setPriority(x.id, x.priority ? 0 : 1);
+      act.appendChild(rb);
+    }
     if (!x.paid && x.status === 'served') {
       const pb = document.createElement('button'); pb.textContent = 'Mark paid';
       pb.onclick = () => markPaid(x.id); act.appendChild(pb);
@@ -352,21 +523,53 @@ async function drawOrders() {
   filterOrders();
 }
 
+async function setPriority(id, v) {
+  await api(`/api/order/${id}/priority`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ priority: v }) });
+  refresh();
+}
+
+let kitchenStation = localStorage.getItem('kitchenStation') || 'All';
 async function drawKitchen() {
   const r = await api(`/api/cafe/${CAFE}/orders`);
   if (!r) return;
-  const orders = (await r.json()).filter(x => ['placed', 'preparing'].includes(x.status));
+  let orders = (await r.json()).filter(x => ['placed', 'preparing'].includes(x.status));
+
+  // build station filter buttons from current orders
+  const stations = ['All', ...new Set(orders.flatMap(o => o.stations || ['Kitchen']))];
+  const fbar = document.getElementById('stationFilter');
+  fbar.innerHTML = '';
+  if (stations.length > 2) {
+    for (const s of stations) {
+      const b = document.createElement('button');
+      b.textContent = s; b.className = s === kitchenStation ? 'on' : '';
+      b.onclick = () => { kitchenStation = s; localStorage.setItem('kitchenStation', s); drawKitchen(); };
+      fbar.appendChild(b);
+    }
+  }
+  if (kitchenStation !== 'All') orders = orders.filter(o => (o.stations || ['Kitchen']).includes(kitchenStation));
+
+  // overdue + priority first
+  orders.sort((a, b) => (b.priority - a.priority) || (isOverdue(b) - isOverdue(a)) || (a.id - b.id));
   const grid = document.getElementById('kitchenGrid');
   grid.innerHTML = '';
   if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">Kitchen clear ✓</p>'; return; }
   for (const x of orders) {
     const card = document.createElement('div');
-    card.className = `card ${x.status}`;
+    const overdue = isOverdue(x);
+    card.className = `card ${x.status}` + (overdue ? ' overdue' : '');
     const h = document.createElement('h3');
     const l = document.createElement('span'); l.textContent = `#${x.id} - ${x.seat_label}`;
+    if (x.priority) { const f = document.createElement('span'); f.className = 'rushflag'; f.textContent = 'RUSH'; l.appendChild(f); }
     h.appendChild(l);
-    const items = x.items.map(i => { const d = document.createElement('div'); d.className = 'li'; d.style.cssText = `font-size:17px${darkMode?';color:#fff':''}` ; d.textContent = `${i.qty}× ${i.name}`; return d; });
-    const elems = [h, ...items];
+    const tmr = document.createElement('div'); tmr.className = 'meta';
+    tmr.innerHTML = `<span class="${overdue?'overdue-time':''}">${elapsedMins(x)} min${overdue?' ⚠️':''}</span>`;
+    const items = x.items.map(i => {
+      const d = document.createElement('div'); d.className = 'li'; d.style.cssText = `font-size:17px${darkMode?';color:#fff':''}`;
+      d.textContent = `${i.qty}× ${i.name}`;
+      if (i.note) { const n = document.createElement('div'); n.style.cssText='font-size:13px;color:#b5651d'; n.textContent='   ↳ '+i.note; d.appendChild(n); }
+      return d;
+    });
+    const elems = [h, tmr, ...items];
     if (x.notes) {
       const note = document.createElement('div');
       note.style.cssText = 'margin-top:6px;font-size:13px;background:#fff7e6;border-radius:6px;padding:5px 8px;color:#7a5a14';
@@ -394,13 +597,26 @@ async function drawMenu() {
     tbody.innerHTML = '<tr><td colspan=6 style="color:#7a8694">No items yet — add one above.</td></tr>';
     return;
   }
+  const TYPE_EMOJI = { veg: '🟢', nonveg: '🔴', egg: '🟡' };
   for (const i of items) {
     const tr = document.createElement('tr');
     tr.dataset.id = i.id;
+    tr.dataset.img = i.image_url || '';
+    tr.dataset.desc = i.description || '';
+    tr.dataset.combo = i.is_combo || 0;
+    // photo thumbnail
+    const photoTd = document.createElement('td');
+    if (i.image_url) { const im = document.createElement('img'); im.src = i.image_url; im.style.cssText = 'width:40px;height:40px;border-radius:6px;object-fit:cover'; im.onerror = () => im.replaceWith(document.createTextNode('—')); photoTd.appendChild(im); }
+    else photoTd.textContent = '—';
     const nameInput = document.createElement('input'); nameInput.className = 'e-name'; nameInput.value = i.name; nameInput.maxLength = 100;
     const priceInput = document.createElement('input'); priceInput.className = 'e-price'; priceInput.type = 'number'; priceInput.value = (i.price/100); priceInput.min = 0;
     const catInput = document.createElement('input'); catInput.className = 'e-cat'; catInput.value = i.category || '';
     const prepInput = document.createElement('input'); prepInput.className = 'e-prep'; prepInput.type = 'number'; prepInput.value = i.prep_mins; prepInput.min = 1;
+    const typeSel = document.createElement('select'); typeSel.className = 'e-type';
+    ['veg','nonveg','egg'].forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = TYPE_EMOJI[t]; o.selected = (i.food_type||'veg') === t; typeSel.appendChild(o); });
+    const spicySel = document.createElement('select'); spicySel.className = 'e-spicy';
+    [0,1,2,3].forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n ? '🌶️'.repeat(n) : '–'; o.selected = (i.spicy||0) === n; spicySel.appendChild(o); });
+    const stationInput = document.createElement('input'); stationInput.className = 'e-station'; stationInput.value = i.station || 'Kitchen';
     const toggleBtn = document.createElement('button');
     toggleBtn.className = `toggle ${i.available ? 'on-sale' : 'off-sale'}`;
     toggleBtn.textContent = i.available ? 'Available' : 'Sold out';
@@ -409,10 +625,11 @@ async function drawMenu() {
     saveBtn.onclick = () => saveItem(i.id, saveBtn, tr);
     const delBtn = document.createElement('button'); delBtn.className = 'delbtn'; delBtn.textContent = 'Delete';
     delBtn.onclick = () => delItem(i.id);
-    const cells = [nameInput, priceInput, catInput, prepInput, toggleBtn, null];
+    const cells = [photoTd, nameInput, priceInput, catInput, prepInput, typeSel, spicySel, stationInput, toggleBtn, null];
     cells.forEach((c, idx) => {
-      const td = document.createElement('td');
-      if (idx === 5) { td.style.whiteSpace = 'nowrap'; td.append(saveBtn, delBtn); }
+      const td = (idx === 0) ? c : document.createElement('td');
+      if (idx === 0) { /* already a td */ }
+      else if (idx === 9) { td.style.whiteSpace = 'nowrap'; td.append(saveBtn, delBtn); }
       else if (c) td.appendChild(c);
       tr.appendChild(td);
     });
@@ -425,14 +642,26 @@ async function addItem() {
   const price = parseFloat(document.getElementById('niPrice').value);
   if (!name || !(price >= 0)) { alert('Enter a name and price.'); return; }
   await api(`/api/cafe/${CAFE}/menu`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, price: Math.round(price * 100), category: document.getElementById('niCat').value || 'General', prep_mins: document.getElementById('niPrep').value || 10 }) });
-  ['niName','niPrice','niCat','niPrep'].forEach(id => document.getElementById(id).value = '');
+    body: JSON.stringify({ name, price: Math.round(price * 100),
+      category: document.getElementById('niCat').value || 'General',
+      prep_mins: document.getElementById('niPrep').value || 10,
+      food_type: document.getElementById('niType').value,
+      spicy: document.getElementById('niSpicy').value,
+      station: document.getElementById('niStation').value || 'Kitchen',
+      image_url: document.getElementById('niImg').value.trim(),
+      description: document.getElementById('niDesc').value.trim(),
+      is_combo: document.getElementById('niCombo').checked }) });
+  ['niName','niPrice','niCat','niPrep','niImg','niDesc'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('niCombo').checked = false;
   drawMenu();
 }
 
 async function saveItem(id, btn, tr) {
   await api(`/api/menu/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: tr.querySelector('.e-name').value, price: Math.round(parseFloat(tr.querySelector('.e-price').value) * 100), category: tr.querySelector('.e-cat').value, prep_mins: tr.querySelector('.e-prep').value }) });
+    body: JSON.stringify({ name: tr.querySelector('.e-name').value, price: Math.round(parseFloat(tr.querySelector('.e-price').value) * 100),
+      category: tr.querySelector('.e-cat').value, prep_mins: tr.querySelector('.e-prep').value,
+      food_type: tr.querySelector('.e-type').value, spicy: tr.querySelector('.e-spicy').value,
+      station: tr.querySelector('.e-station').value, image_url: tr.dataset.img, description: tr.dataset.desc, is_combo: +tr.dataset.combo }) });
   btn.textContent = 'Saved ✓'; setTimeout(() => btn.textContent = 'Save', 1500);
 }
 
@@ -490,14 +719,32 @@ async function drawCustomers() {
   const customers = await r.json();
   const tbody = document.querySelector('#custTable tbody');
   tbody.innerHTML = '';
-  if (!customers.length) { tbody.innerHTML = '<tr><td colspan=5>No customers yet.</td></tr>'; return; }
+  if (!customers.length) { tbody.innerHTML = '<tr><td colspan=6>No customers yet.</td></tr>'; return; }
   for (const x of customers) {
     const tr = document.createElement('tr');
     [x.name || '—', x.phone, x.points, x.visits, x.last_visit.split(' ')[0]].forEach(v => {
       const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
     });
+    const actTd = document.createElement('td');
+    if (x.points > 0) {
+      const rb = document.createElement('button'); rb.className = 'savebtn'; rb.textContent = `Redeem (₹${(x.points/100).toFixed(0)} off)`;
+      rb.onclick = () => redeemPoints(x.phone, x.points);
+      actTd.appendChild(rb);
+    } else actTd.textContent = '—';
+    tr.appendChild(actTd);
     tbody.appendChild(tr);
   }
+}
+
+async function redeemPoints(phone, max) {
+  const pts = prompt(`This customer has ${max} points (₹${(max/100).toFixed(0)} value).\nHow many points to redeem?`, max);
+  if (pts === null) return;
+  const n = parseInt(pts);
+  if (!(n > 0)) { alert('Enter a positive number.'); return; }
+  const r = await api(`/api/cafe/${CAFE}/redeem`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, points: n }) });
+  const d = await r.json();
+  if (d.ok) { alert(`✅ Redeemed ${n} points = ₹${d.rupees_off} off. ${d.remaining} points left.`); drawCustomers(); }
+  else alert(d.error || 'Could not redeem.');
 }
 
 async function drawWinback() {
@@ -568,6 +815,9 @@ async function loadSettings() {
   document.getElementById('sCafeName').value = s.name || '';
   document.getElementById('sUpi').value = s.upi_id || '';
   document.getElementById('sLoyalty').value = s.loyalty_rate ?? 10;
+  document.getElementById('sLogo').value = s.logo_url || '';
+  document.getElementById('sColor').value = s.brand_color || '#b5651d';
+  document.getElementById('sReview').value = s.google_review_url || '';
 }
 
 async function saveSettings() {
@@ -576,7 +826,10 @@ async function saveSettings() {
   const loyalty_rate = document.getElementById('sLoyalty').value;
   if (!name) { alert('Cafe name cannot be empty.'); return; }
   const r = await api(`/api/cafe/${CAFE}/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, upi_id, loyalty_rate }) });
+    body: JSON.stringify({ name, upi_id, loyalty_rate,
+      logo_url: document.getElementById('sLogo').value.trim(),
+      brand_color: document.getElementById('sColor').value,
+      google_review_url: document.getElementById('sReview').value.trim() }) });
   if (!r) return;
   const d = await r.json();
   if (d.ok) {
@@ -600,7 +853,209 @@ async function markPaid(id) {
   refresh();
 }
 
+// ===== REPORTS =====
+async function drawReports() {
+  const date = document.getElementById('rDate').value;
+  const [rep, ser, sell, peak] = await Promise.all([
+    api(`/api/cafe/${CAFE}/report${date ? '?date=' + date : ''}`).then(r => r.json()),
+    api(`/api/cafe/${CAFE}/series?days=14`).then(r => r.json()),
+    api(`/api/cafe/${CAFE}/sellers`).then(r => r.json()),
+    api(`/api/cafe/${CAFE}/peak-hours`).then(r => r.json()),
+  ]);
+  document.getElementById('reportCards').innerHTML =
+    `<div class="rc"><b>${rep.orders}</b><span>Orders</span></div>
+     <div class="rc"><b>${money(rep.revenue)}</b><span>Revenue</span></div>
+     <div class="rc"><b>${money(rep.cash)}</b><span>Cash</span></div>
+     <div class="rc"><b>${money(rep.upi)}</b><span>UPI / online</span></div>
+     <div class="rc"><b>${money(rep.expenses)}</b><span>Expenses</span></div>
+     <div class="rc" style="border-color:${rep.profit>=0?'#a8d5b5':'#f5b7b1'}"><b style="color:${rep.profit>=0?'var(--green)':'#c0392b'}">${money(rep.profit)}</b><span>Profit</span></div>`;
+  const tt = document.querySelector('#topItemsTable tbody'); tt.innerHTML = '';
+  if (!rep.top_items.length) tt.innerHTML = '<tr><td colspan=3 style="color:#7a8694">No sales that day.</td></tr>';
+  for (const it of rep.top_items) { const tr = document.createElement('tr'); [it.name, it.qty, money(it.revenue)].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); }); tt.appendChild(tr); }
+
+  // revenue bar chart
+  const chart = document.getElementById('revChart'); chart.innerHTML = '';
+  const maxRev = Math.max(1, ...ser.map(d => d.revenue));
+  if (!ser.length) chart.innerHTML = '<span style="color:#7a8694;margin:auto">No data yet.</span>';
+  for (const d of ser) {
+    const col = document.createElement('div'); col.className = 'bar-col';
+    const fill = document.createElement('div'); fill.className = 'bar-fill';
+    fill.style.height = (d.revenue / maxRev * 100) + '%';
+    fill.title = `${d.d}: ${money(d.revenue)} (${d.orders} orders)`;
+    const lbl = document.createElement('div'); lbl.className = 'bar-lbl'; lbl.textContent = d.d.slice(5);
+    col.append(fill, lbl); chart.appendChild(col);
+  }
+
+  // peak-hours heatmap
+  const heat = document.getElementById('heatMap'); heat.innerHTML = '';
+  const maxH = Math.max(1, ...peak.map(p => p.orders));
+  for (const p of peak) {
+    const cell = document.createElement('div'); cell.className = 'h';
+    const intensity = p.orders / maxH;
+    cell.style.background = p.orders ? `rgba(181,101,29,${0.2 + intensity * 0.8})` : '#eef1f5';
+    cell.style.color = intensity > 0.5 ? '#fff' : '#555';
+    cell.title = `${p.hour}:00 — ${p.orders} orders`;
+    cell.textContent = p.hour;
+    heat.appendChild(cell);
+  }
+
+  const bt = document.querySelector('#bestTable tbody'); bt.innerHTML = '';
+  const best = sell.best.filter(b => b.qty > 0);
+  if (!best.length) bt.innerHTML = '<tr><td colspan=2 style="color:#7a8694">No sales yet.</td></tr>';
+  for (const b of best) { const tr = document.createElement('tr'); [b.name, b.qty].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); }); bt.appendChild(tr); }
+  const wt = document.querySelector('#worstTable tbody'); wt.innerHTML = '';
+  if (!sell.worst.length) wt.innerHTML = '<tr><td style="color:var(--green)">Every item is selling ✓</td></tr>';
+  for (const w of sell.worst) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.textContent = w.name; tr.appendChild(td); wt.appendChild(tr); }
+}
+
+function downloadBackup(e) { e.preventDefault(); window.location.href = `/api/cafe/${CAFE}/backup`; }
+
+// ===== EXPENSES =====
+async function drawExpenses() {
+  const r = await api(`/api/cafe/${CAFE}/expenses`); if (!r) return;
+  const rows = await r.json();
+  const tbody = document.querySelector('#expTable tbody'); tbody.innerHTML = '';
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan=5 style="color:#7a8694">No expenses logged yet.</td></tr>'; return; }
+  for (const x of rows) {
+    const tr = document.createElement('tr');
+    [x.spent_on, x.label, x.category, money(x.amount)].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+    const actTd = document.createElement('td');
+    const del = document.createElement('button'); del.className = 'delbtn'; del.textContent = 'Delete';
+    del.onclick = async () => { await api(`/api/expenses/${x.id}/delete`, { method: 'POST' }); drawExpenses(); };
+    actTd.appendChild(del); tr.appendChild(actTd);
+    tbody.appendChild(tr);
+  }
+}
+async function addExpense() {
+  const label = document.getElementById('exLabel').value.trim();
+  const amount = parseFloat(document.getElementById('exAmount').value);
+  if (!label || !(amount > 0)) { alert('Enter a label and amount.'); return; }
+  await api(`/api/cafe/${CAFE}/expenses`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label, amount: Math.round(amount * 100), category: document.getElementById('exCat').value || 'General', spent_on: document.getElementById('exDate').value || undefined }) });
+  ['exLabel','exAmount','exCat'].forEach(id => document.getElementById(id).value = '');
+  drawExpenses();
+}
+
+// ===== STAFF =====
+async function drawStaff() {
+  const r = await api(`/api/cafe/${CAFE}/staff`); if (!r) return;
+  const rows = await r.json();
+  const tbody = document.querySelector('#staffTable tbody'); tbody.innerHTML = '';
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan=4 style="color:#7a8694">No staff added. You (owner) can add waiter/manager logins above.</td></tr>'; return; }
+  for (const x of rows) {
+    const tr = document.createElement('tr');
+    [x.name, x.email, x.role].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+    const actTd = document.createElement('td');
+    const del = document.createElement('button'); del.className = 'delbtn'; del.textContent = 'Remove';
+    del.onclick = async () => { if (!confirm('Remove this staff login?')) return; await api(`/api/staff/${x.id}/delete`, { method: 'POST' }); drawStaff(); };
+    actTd.appendChild(del); tr.appendChild(actTd);
+    tbody.appendChild(tr);
+  }
+}
+async function addStaff() {
+  const name = document.getElementById('stName').value.trim();
+  const email = document.getElementById('stEmail').value.trim();
+  const password = document.getElementById('stPass').value;
+  if (!name || !email || password.length < 8) { alert('Name, email and a password (min 8 chars) are required.'); return; }
+  const r = await api(`/api/cafe/${CAFE}/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password, role: document.getElementById('stRole').value }) });
+  const d = await r.json();
+  if (d.ok) { ['stName','stEmail','stPass'].forEach(id => document.getElementById(id).value = ''); drawStaff(); }
+  else alert(d.error || 'Could not add staff.');
+}
+
+// ===== ACCOUNT DELETION =====
+async function deleteAccount() {
+  if (!confirm('This permanently deletes your cafe and ALL data. Are you absolutely sure?')) return;
+  const typed = prompt('Type DELETE to confirm:');
+  if (typed !== 'DELETE') return;
+  const r = await api(`/api/cafe/${CAFE}/delete-account`, { method: 'POST' });
+  if (r && r.ok) { alert('Your account and all data have been deleted.'); localStorage.clear(); location.href = '/'; }
+}
+
+// ===== WAITER CALLS =====
+let lastWaiterCount = 0;
+async function loadWaiterCalls() {
+  const r = await api(`/api/cafe/${CAFE}/waiter-calls`); if (!r) return;
+  const calls = await r.json();
+  const banner = document.getElementById('waiterBanner');
+  if (!calls.length) { banner.classList.add('hide'); lastWaiterCount = 0; return; }
+  if (calls.length > lastWaiterCount) playBeep();
+  lastWaiterCount = calls.length;
+  banner.classList.remove('hide');
+  banner.innerHTML = '';
+  const txt = document.createElement('span');
+  txt.textContent = `🛎️ ${calls.length} table${calls.length>1?'s':''} need attention: ` + calls.map(c => `${c.seat_label} (${c.reason})`).join(', ');
+  banner.appendChild(txt);
+  const wrap = document.createElement('span');
+  for (const c of calls) {
+    const b = document.createElement('button'); b.textContent = `✓ ${c.seat_label}`;
+    b.onclick = async () => { await api(`/api/waiter-calls/${c.id}/resolve`, { method: 'POST' }); loadWaiterCalls(); };
+    wrap.appendChild(b);
+  }
+  banner.appendChild(wrap);
+}
+
+// ===== TRIAL BANNER =====
+async function loadTrial() {
+  const r = await api(`/api/cafe/${CAFE}/trial`); if (!r) return;
+  const t = await r.json();
+  const b = document.getElementById('trialBanner');
+  if (t.plan !== 'free' || t.days_left === null) { b.classList.add('hide'); return; }
+  b.classList.remove('hide');
+  b.classList.toggle('expired', t.days_left <= 0);
+  b.innerHTML = '';
+  const s = document.createElement('span');
+  s.textContent = t.days_left > 0
+    ? `⏳ Free trial — ${t.days_left} day${t.days_left>1?'s':''} left. Upgrade to keep ScanServe running for your cafe.`
+    : '⚠️ Your free trial has ended. Upgrade to continue using ScanServe.';
+  const btn = document.createElement('button'); btn.textContent = 'Upgrade — ₹499/mo';
+  btn.onclick = () => alert('To upgrade, contact ScanServe support. (Payment integration is set up separately.)');
+  b.append(s, btn);
+}
+
+// ===== DESKTOP NOTIFICATIONS =====
+function enableNotifs() {
+  if (!('Notification' in window)) { alert('Your browser does not support notifications.'); return; }
+  Notification.requestPermission().then(p => {
+    document.getElementById('notifBtn').textContent = p === 'granted' ? '🔔 Alerts on' : '🔔 Alerts';
+    if (p === 'granted') new Notification('ScanServe', { body: "You'll now get an alert for every new order." });
+  });
+}
+function notifyNewOrder(o) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const items = (o.items || []).map(i => `${i.qty}× ${i.name}`).join(', ');
+  new Notification(`New order — ${o.seat_label}`, { body: `${items} · ${money(o.total)}` });
+}
+
+// ===== ONBOARDING TOUR =====
+const TOUR = [
+  { t: 'Welcome to your dashboard! 👋', b: 'This is where every customer order lands in real time. Let me show you the key tabs.' },
+  { t: 'Live Orders & Kitchen', b: 'New orders appear instantly with a sound. The Kitchen tab is a big-text, dark-mode view for your cooks — orders turn red if they take too long.' },
+  { t: 'Menu', b: 'Add your real items with photos, veg/non-veg marks, spice level and prices. Mark items sold-out in one tap.' },
+  { t: 'Reports 📊', b: 'See daily profit (revenue minus expenses), best sellers, and your busiest hours. Back up all your data anytime.' },
+  { t: 'Print QR codes', b: 'Finally, print one QR sticker per table (top-right button) and stick them on. Customers scan to order. That\'s it — you\'re ready! 🎉' },
+];
+let tourStep = 0;
+function startTourIfNew() {
+  if (localStorage.getItem('ss_tour_done') === '1') return;
+  tourStep = 0;
+  document.getElementById('tour').classList.add('show');
+}
+function tourNext() {
+  tourStep++;
+  if (tourStep >= TOUR.length) { endTour(); return; }
+  document.getElementById('tourTitle').textContent = TOUR[tourStep].t;
+  document.getElementById('tourBody').textContent = TOUR[tourStep].b;
+  document.getElementById('tourBtn').textContent = tourStep === TOUR.length - 1 ? 'Got it! 🎉' : 'Next →';
+}
+function endTour() {
+  localStorage.setItem('ss_tour_done', '1');
+  document.getElementById('tour').classList.remove('show');
+}
+
 init();
+startTourIfNew();
 </script>
 </body>
 </html>

@@ -179,11 +179,30 @@
   <h2>Try it right now</h2>
   <p>See exactly what your customers and you will see — no signup needed.</p>
   <div class="demo-btns">
-    <a class="demo-owner" href="/login.html">Owner dashboard &rarr;</a>
-    <a class="demo-customer" href="/order.html?seat=cafe_brewbean_t1">Customer ordering view</a>
+    <a class="demo-owner" href="#" id="demoBtn" onclick="launchDemo(event)">Try the owner dashboard &rarr;</a>
+    <a class="demo-customer" href="#" id="demoCust" style="opacity:.5;pointer-events:none">Customer ordering view</a>
   </div>
-  <div class="demo-note">Demo login: brew@demo.com / demo1234</div>
+  <div class="demo-note" id="demoNote">A fully working demo cafe is created instantly — no signup, pre-loaded with sample orders.</div>
 </div>
+<script>
+async function launchDemo(e){
+  e.preventDefault();
+  const btn=document.getElementById('demoBtn'); btn.textContent='Setting up your demo…';
+  try{
+    const r=await fetch('/api/demo',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await r.json();
+    if(!d.ok){ btn.textContent='Try again'; return; }
+    localStorage.setItem('ss_token',d.token);
+    localStorage.setItem('ss_cafe',d.cafe_id);
+    localStorage.setItem('ss_name',d.cafe_name);
+    localStorage.setItem('ss_tour_done','1'); // skip tour in demo
+    // wire the customer view to a real table from this demo cafe
+    const seats=await fetch('/api/cafe/'+d.cafe_id+'/seats',{headers:{Authorization:'Bearer '+d.token}}).then(x=>x.json());
+    if(seats[0]){ const c=document.getElementById('demoCust'); c.href='/order.html?seat='+seats[0].id; c.style.opacity=1; c.style.pointerEvents='auto'; c.setAttribute('target','_blank'); }
+    location.href='/dashboard.html';
+  }catch(err){ btn.textContent='Try again'; }
+}
+</script>
 
 <footer>
   &copy; 2026 ScanServe &nbsp;·&nbsp; Built for Indian cafes &nbsp;·&nbsp;
