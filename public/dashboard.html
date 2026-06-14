@@ -74,6 +74,7 @@
   <div class="tab" data-t="history">History</div>
   <div class="tab" data-t="customers">Customers</div>
   <div class="tab" data-t="winback">Win-back</div>
+  <div class="tab" data-t="tables">Tables</div>
   <div class="tab" data-t="settings">Settings</div>
 </div>
 
@@ -129,6 +130,20 @@
     </div>
     <table id="wbTable">
       <thead><tr><th>Name</th><th>Phone</th><th>Points</th><th>Last visit</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="tables" class="pane hide" style="max-width:520px">
+    <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
+      <span>Add or remove tables. Each table gets its own QR code on the Print QR page.</span>
+    </div>
+    <div class="additem">
+      <input id="newTableLabel" placeholder="Table name (e.g. Table 9, Terrace 1)" style="flex:1">
+      <button class="addbtn" onclick="addTable()">+ Add table</button>
+    </div>
+    <table id="tablesTable">
+      <thead><tr><th>Table name</th><th>QR link</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -214,7 +229,7 @@ async function refresh() {
      <div class="stat"><b>${s.active_orders}</b><span>Active now</span></div>
      <div class="stat"><b>${stars}</b><span>Avg rating</span></div>`;
 
-  const fns = { orders: drawOrders, kitchen: drawKitchen, menu: drawMenu, history: loadHistory, customers: drawCustomers, winback: drawWinback, settings: loadSettings };
+  const fns = { orders: drawOrders, kitchen: drawKitchen, menu: drawMenu, history: loadHistory, customers: drawCustomers, winback: drawWinback, tables: drawTables, settings: loadSettings };
   if (fns[which]) fns[which]();
 }
 
@@ -414,6 +429,43 @@ async function sendWinback() {
   const d = await r.json();
   b.textContent = `Sent to ${d.sent}/${d.total}`;
   setTimeout(() => { b.disabled = false; b.textContent = 'Send offer to all'; }, 3000);
+}
+
+async function drawTables() {
+  const r = await api(`/api/cafe/${CAFE}/seats`);
+  if (!r) return;
+  const seats = await r.json();
+  const tbody = document.querySelector('#tablesTable tbody');
+  tbody.innerHTML = '';
+  if (!seats.length) { tbody.innerHTML = '<tr><td colspan=3 style="color:#7a8694">No tables yet — add one above.</td></tr>'; return; }
+  for (const s of seats) {
+    const tr = document.createElement('tr');
+    const url = `${location.origin}/order.html?seat=${s.id}`;
+    const nameTd = document.createElement('td'); nameTd.textContent = s.label;
+    const linkTd = document.createElement('td');
+    const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.textContent = 'Open link'; a.style.color = '#b5651d';
+    linkTd.appendChild(a);
+    const actTd = document.createElement('td');
+    const delBtn = document.createElement('button'); delBtn.className = 'delbtn'; delBtn.textContent = 'Delete';
+    delBtn.onclick = () => deleteTable(s.id);
+    actTd.appendChild(delBtn);
+    tr.append(nameTd, linkTd, actTd);
+    tbody.appendChild(tr);
+  }
+}
+
+async function addTable() {
+  const label = document.getElementById('newTableLabel').value.trim();
+  if (!label) { alert('Enter a table name.'); return; }
+  await api(`/api/cafe/${CAFE}/seats`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) });
+  document.getElementById('newTableLabel').value = '';
+  drawTables();
+}
+
+async function deleteTable(id) {
+  if (!confirm('Delete this table? Its QR code will stop working.')) return;
+  await api(`/api/seats/${id}/delete`, { method: 'POST' });
+  drawTables();
 }
 
 async function loadSettings() {

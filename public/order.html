@@ -65,6 +65,7 @@
       <div class="clock" id="clock">-</div>
       <div>minutes left</div>
       <div class="pill" id="pointPill"></div>
+      <div style="margin-top:10px"><a id="receiptLink" href="#" target="_blank" style="color:#b5651d;font-size:14px">View / print receipt &rarr;</a></div>
       <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
       <div style="font-weight:600;margin-bottom:6px">How was it?</div>
       <div class="stars" id="stars"><span data-v="1">&#9733;</span><span data-v="2">&#9733;</span><span data-v="3">&#9733;</span><span data-v="4">&#9733;</span><span data-v="5">&#9733;</span></div>
@@ -131,6 +132,7 @@ document.getElementById('placeBtn').onclick=async()=>{
   ORDER_ID=d.orderId;
   document.getElementById('checkout').classList.remove('show');
   document.getElementById('pointPill').textContent=`+${d.points_earned} loyalty points earned`;
+  document.getElementById('receiptLink').href=`/receipt.html?order=${d.orderId}`;
   document.getElementById('statusModal').classList.add('show');
   poll();
 };

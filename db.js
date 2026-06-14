@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY, owner_id INTEGER NOT NULL, cafe_id TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')));
 
+CREATE TABLE IF NOT EXISTS password_resets (
+  token TEXT PRIMARY KEY, owner_id INTEGER NOT NULL, email TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')));
+
 CREATE TABLE IF NOT EXISTS seats (
   id TEXT PRIMARY KEY, cafe_id TEXT NOT NULL, label TEXT NOT NULL);
 

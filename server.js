@@ -1,66 +1,109 @@
 const express = require('express');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const db = require('./db');
 const auth = require('./auth');
 const payments = require('./payments');
 const notify = require('./notify');
+const mailer = require('./mailer');
 
 const app = express();
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+    },
+  },
+}));
+
+// Force HTTPS in production
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && req.headers['x-forwarded-proto'] !== 'https') {
+    return res.redirect(301, 'https://' + req.headers.host + req.url);
+  }
+  next();
+});
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const getCafe = (id) => db.prepare('SELECT * FROM cafes WHERE id = ?').get(id);
+// Rate limiting — global: 200 req/min per IP
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+app.use(globalLimiter);
 
-// Escape HTML to prevent XSS when displaying user content
-function esc(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;');
-}
+// Strict limiter for auth endpoints — 10 attempts/min per IP
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts. Please wait a minute.' },
+});
+
+// Order endpoint limiter — 30/min per IP
+const orderLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: 'Too many orders. Please slow down.' },
+});
+
+const getCafe = (id) => db.prepare('SELECT * FROM cafes WHERE id = ?').get(id);
 
 // Reset sold-out items daily at midnight
 function scheduleDailySoldoutReset() {
   const now = new Date();
   const midnight = new Date(now);
   midnight.setHours(24, 0, 0, 0);
-  const msUntilMidnight = midnight - now;
   setTimeout(() => {
     db.prepare('UPDATE menu_items SET available = 1 WHERE available = 0').run();
-    console.log('[Daily reset] Sold-out items restored to available.');
+    console.log('[Daily reset] Sold-out items restored.');
     setInterval(() => {
       db.prepare('UPDATE menu_items SET available = 1 WHERE available = 0').run();
-      console.log('[Daily reset] Sold-out items restored to available.');
+      console.log('[Daily reset] Sold-out items restored.');
     }, 24 * 60 * 60 * 1000);
-  }, msUntilMidnight);
+  }, midnight - now);
 }
 scheduleDailySoldoutReset();
 
+// Clean up expired reset tokens every hour
+setInterval(() => {
+  db.prepare("DELETE FROM password_resets WHERE created_at < datetime('now', '-1 hour')").run();
+}, 60 * 60 * 1000);
+
 // ===== AUTH =====
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', authLimiter, (req, res) => {
   const { cafe_name, email, password, upi_id } = req.body;
   if (!cafe_name || !email || !password) return res.status(400).json({ error: 'Missing fields' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address' });
   if (db.prepare('SELECT 1 FROM owners WHERE email = ?').get(email))
     return res.status(409).json({ error: 'Email already registered' });
 
   const cafeId = 'cafe_' + Math.random().toString(36).slice(2, 8);
   const tx = db.transaction(() => {
     db.prepare('INSERT INTO cafes (id,name,owner_email,upi_id) VALUES (?,?,?,?)')
-      .run(cafeId, cafe_name, email, upi_id || null);
+      .run(cafeId, cafe_name.trim(), email, upi_id || null);
     const r = db.prepare('INSERT INTO owners (cafe_id,email,pass_hash) VALUES (?,?,?)')
       .run(cafeId, email, auth.hashPassword(password));
     return { id: r.lastInsertRowid, cafe_id: cafeId };
   });
   const owner = tx();
   const token = auth.createSession(owner);
-  res.json({ ok: true, token, cafe_id: cafeId, cafe_name });
+  res.json({ ok: true, token, cafe_id: cafeId, cafe_name: cafe_name.trim() });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authLimiter, (req, res) => {
   const { email, password } = req.body;
   const owner = db.prepare('SELECT * FROM owners WHERE email = ?').get(email);
   if (!owner || !auth.verifyPassword(password, owner.pass_hash))
@@ -82,6 +125,42 @@ app.post('/api/auth/logout', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Forgot password — request reset
+app.post('/api/auth/forgot', authLimiter, async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+  const owner = db.prepare('SELECT * FROM owners WHERE email = ?').get(email);
+  // Always return success to prevent email enumeration
+  if (!owner) return res.json({ ok: true, message: 'If that email exists, a reset link has been sent.' });
+
+  const crypto = require('crypto');
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare('DELETE FROM password_resets WHERE owner_id = ?').run(owner.id);
+  db.prepare('INSERT INTO password_resets (token, owner_id, email) VALUES (?,?,?)').run(token, owner.id, email);
+
+  const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  const resetUrl = `${baseUrl}/reset-password.html?token=${token}`;
+  await mailer.sendResetEmail(email, resetUrl);
+  res.json({ ok: true, message: 'If that email exists, a reset link has been sent.' });
+});
+
+// Reset password — use token
+app.post('/api/auth/reset', authLimiter, (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: 'Missing fields' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  const reset = db.prepare(
+    "SELECT * FROM password_resets WHERE token = ? AND created_at >= datetime('now', '-1 hour')"
+  ).get(token);
+  if (!reset) return res.status(400).json({ error: 'Reset link is invalid or has expired. Please request a new one.' });
+
+  db.prepare('UPDATE owners SET pass_hash = ? WHERE id = ?').run(auth.hashPassword(password), reset.owner_id);
+  db.prepare('DELETE FROM password_resets WHERE token = ?').run(token);
+  db.prepare('DELETE FROM sessions WHERE owner_id = ?').run(reset.owner_id);
+  res.json({ ok: true, message: 'Password updated. Please log in.' });
+});
+
 // ===== PUBLIC (customer) =====
 
 app.get('/api/scan/:seatId', (req, res) => {
@@ -94,7 +173,7 @@ app.get('/api/scan/:seatId', (req, res) => {
   res.json({ cafe: { id: cafe.id, name: cafe.name, upi_id: cafe.upi_id }, seat, menu });
 });
 
-app.post('/api/order', (req, res) => {
+app.post('/api/order', orderLimiter, (req, res) => {
   const { cafe_id, seat_id, items, name, phone, pay_method } = req.body;
   const cafe = getCafe(cafe_id);
   if (!cafe) return res.status(404).json({ error: 'Cafe not found' });
@@ -102,7 +181,6 @@ app.post('/api/order', (req, res) => {
   if (!phone) return res.status(400).json({ error: 'Phone required for receipt & loyalty' });
   if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a valid 10-digit phone number' });
 
-  // Prevent order spam: max 3 active orders per seat
   if (seat_id) {
     const activeCount = db.prepare(
       "SELECT COUNT(*) n FROM orders WHERE seat_id = ? AND status IN ('placed','preparing','ready') AND created_at >= datetime('now', '-2 hours')"
@@ -118,7 +196,7 @@ app.post('/api/order', (req, res) => {
     const m = db.prepare('SELECT * FROM menu_items WHERE id = ? AND cafe_id = ?').get(line.id, cafe_id);
     if (!m) return res.status(400).json({ error: `Item ${line.id} not on menu` });
     if (!m.available) return res.status(409).json({ error: `${m.name} is sold out` });
-    const qty = Math.max(1, Math.min(20, parseInt(line.qty) || 1)); // cap qty at 20
+    const qty = Math.max(1, Math.min(20, parseInt(line.qty) || 1));
     total += m.price * qty;
     eta = Math.max(eta, m.prep_mins);
     resolved.push({ id: m.id, name: m.name, price: m.price, qty });
@@ -155,6 +233,15 @@ app.get('/api/order/:id/status', (req, res) => {
   const elapsed = Math.floor((Date.now() - new Date(o.created_at + 'Z').getTime()) / 60000);
   o.remaining_mins = Math.max(0, o.eta_mins - elapsed);
   res.json(o);
+});
+
+// Receipt endpoint — public, identified by order ID
+app.get('/api/order/:id/receipt', (req, res) => {
+  const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  const items = db.prepare('SELECT name,qty,price FROM order_items WHERE order_id = ?').all(o.id);
+  const cafe = getCafe(o.cafe_id);
+  res.json({ order: o, items, cafe: { name: cafe.name, upi_id: cafe.upi_id } });
 });
 
 app.post('/api/order/:id/feedback', (req, res) => {
@@ -199,7 +286,6 @@ app.get('/api/cafe/:cafeId/orders', auth.requireAuth, (req, res) => {
   res.json(orders);
 });
 
-// Order history with date range filter
 app.get('/api/cafe/:cafeId/history', auth.requireAuth, (req, res) => {
   const { from, to } = req.query;
   const fromDate = from || '2000-01-01';
@@ -213,7 +299,6 @@ app.get('/api/cafe/:cafeId/history', auth.requireAuth, (req, res) => {
   res.json(orders);
 });
 
-// CSV export
 app.get('/api/cafe/:cafeId/export', auth.requireAuth, (req, res) => {
   const { from, to } = req.query;
   const fromDate = from || '2000-01-01';
@@ -226,7 +311,7 @@ app.get('/api/cafe/:cafeId/export', auth.requireAuth, (req, res) => {
      GROUP BY o.id ORDER BY o.created_at DESC`
   ).all(req.params.cafeId, fromDate, toDate);
 
-  const header = 'Order ID,Date,Seat,Status,Total (₹),Paid,Payment,Rating,Items\n';
+  const header = 'Order ID,Date,Seat,Status,Total (Rs),Paid,Payment,Rating,Items\n';
   const rows = orders.map(o =>
     `${o.id},"${o.created_at}","${o.seat_label}",${o.status},${(o.total/100).toFixed(2)},${o.paid?'Yes':'No'},${o.pay_method},${o.rating||''},"${(o.items||'').replace(/"/g,'""')}"`
   ).join('\n');
@@ -289,6 +374,27 @@ app.post('/api/menu/:id/delete', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Table management
+app.get('/api/cafe/:cafeId/seats', auth.requireAuth, (req, res) => {
+  res.json(db.prepare('SELECT id,label FROM seats WHERE cafe_id = ? ORDER BY label').all(req.params.cafeId));
+});
+
+app.post('/api/cafe/:cafeId/seats', auth.requireAuth, (req, res) => {
+  const { label } = req.body;
+  if (!label || !label.trim()) return res.status(400).json({ error: 'Table label required' });
+  const cafeId = req.params.cafeId;
+  const seatId = `${cafeId}_t${Date.now()}`;
+  db.prepare('INSERT INTO seats (id, cafe_id, label) VALUES (?,?,?)').run(seatId, cafeId, label.trim());
+  res.json({ ok: true, id: seatId, label: label.trim() });
+});
+
+app.post('/api/seats/:seatId/delete', auth.requireAuth, (req, res) => {
+  const seat = db.prepare('SELECT * FROM seats WHERE id = ?').get(req.params.seatId);
+  if (!seat || seat.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not your table' });
+  db.prepare('DELETE FROM seats WHERE id = ?').run(req.params.seatId);
+  res.json({ ok: true });
+});
+
 app.get('/api/cafe/:cafeId/customers', auth.requireAuth, (req, res) => {
   res.json(db.prepare('SELECT name,phone,points,visits,last_visit FROM customers WHERE cafe_id = ? ORDER BY last_visit DESC').all(req.params.cafeId));
 });
@@ -323,20 +429,9 @@ app.get('/api/cafe/:cafeId/stats', auth.requireAuth, (req, res) => {
   const week = db.prepare(`SELECT COALESCE(SUM(total),0) rev FROM orders WHERE cafe_id=? AND created_at >= datetime('now', '-7 days')`).get(c);
   const active = db.prepare(`SELECT COUNT(*) n FROM orders WHERE cafe_id=? AND status IN ('placed','preparing','ready')`).get(c);
   const avgRating = db.prepare(`SELECT ROUND(AVG(rating),1) r FROM orders WHERE cafe_id=? AND rating IS NOT NULL`).get(c);
-  res.json({
-    orders_today: today.n,
-    revenue_today: today.rev,
-    revenue_week: week.rev,
-    active_orders: active.n,
-    avg_rating: avgRating.r || null
-  });
+  res.json({ orders_today: today.n, revenue_today: today.rev, revenue_week: week.rev, active_orders: active.n, avg_rating: avgRating.r || null });
 });
 
-app.get('/api/cafe/:cafeId/seats', auth.requireAuth, (req, res) => {
-  res.json(db.prepare('SELECT id,label FROM seats WHERE cafe_id = ? ORDER BY label').all(req.params.cafeId));
-});
-
-// Cafe settings — owner can update their cafe info
 app.get('/api/cafe/:cafeId/settings', auth.requireAuth, (req, res) => {
   const cafe = getCafe(req.params.cafeId);
   if (!cafe) return res.status(404).json({ error: 'Cafe not found' });
@@ -354,4 +449,4 @@ app.post('/api/cafe/:cafeId/settings', auth.requireAuth, (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`ScanServe running: http://localhost:${PORT}  (payments: ${payments.LIVE ? 'LIVE' : 'demo'})`));
+app.listen(PORT, () => console.log(`ScanServe running: http://localhost:${PORT}`));
