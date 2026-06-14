@@ -69,19 +69,30 @@
 
 <div class="tabs">
   <div class="tab on" data-t="orders">Live Orders</div>
-  <div class="tab" data-t="kitchen">Kitchen</div>
+  <div class="tab" data-t="kitchen">Kitchen 🌙</div>
   <div class="tab" data-t="menu">Menu</div>
   <div class="tab" data-t="history">History</div>
-  <div class="tab" data-t="customers">Customers</div>
-  <div class="tab" data-t="winback">Win-back</div>
+  <div class="tab" data-t="customers" title="All customers who have ordered — with loyalty points and visit count">Customers</div>
+  <div class="tab" data-t="winback" title="Send a discount offer to customers who haven't visited in 30+ days">Win-back 💌</div>
   <div class="tab" data-t="tables">Tables</div>
   <div class="tab" data-t="settings">Settings</div>
 </div>
 
 <div class="stats" id="stats"></div>
 <div class="wrap">
-  <div id="orders" class="pane"><div class="grid" id="ordersGrid"></div></div>
-  <div id="kitchen" class="pane hide"><div class="grid" id="kitchenGrid"></div></div>
+  <div id="orders" class="pane">
+    <div style="margin-bottom:12px">
+      <input id="orderSearch" placeholder="🔍 Search by seat, item or order #..." style="width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:#fff">
+    </div>
+    <div class="grid" id="ordersGrid"></div>
+  </div>
+  <div id="kitchen" class="pane hide">
+    <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:14px;color:var(--muted)">Active kitchen orders</span>
+      <button id="darkToggle" onclick="toggleDark()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px">🌙 Dark mode</button>
+    </div>
+    <div class="grid" id="kitchenGrid"></div>
+  </div>
 
   <div id="menu" class="pane hide">
     <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
@@ -170,6 +181,45 @@
 </div>
 
 <script>
+// ── Notification sound via Web Audio API (no file needed) ──
+let audioCtx = null;
+let lastOrderIds = new Set();
+function playBeep() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioCtx.currentTime;
+    [0, 0.18, 0.36].forEach(offset => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.frequency.value = 880; o.type = 'sine';
+      g.gain.setValueAtTime(0.4, now + offset);
+      g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.15);
+      o.start(now + offset); o.stop(now + offset + 0.15);
+    });
+  } catch(e) {}
+}
+
+// ── Dark kitchen mode ──
+let darkMode = localStorage.getItem('kitchenDark') === '1';
+function toggleDark() {
+  darkMode = !darkMode;
+  localStorage.setItem('kitchenDark', darkMode ? '1' : '0');
+  applyDark();
+}
+function applyDark() {
+  const btn = document.getElementById('darkToggle');
+  if (darkMode) {
+    document.getElementById('kitchen').style.background = '#111';
+    document.body.style.setProperty('--bg', '#111');
+    if (btn) btn.textContent = '☀️ Light mode';
+  } else {
+    document.getElementById('kitchen').style.background = '';
+    document.body.style.setProperty('--bg', '#f4f5f7');
+    if (btn) btn.textContent = '🌙 Dark mode';
+  }
+}
+
 const TOKEN = localStorage.getItem('ss_token');
 const CAFE = localStorage.getItem('ss_cafe');
 const NAME = localStorage.getItem('ss_name');
@@ -196,16 +246,26 @@ async function api(path, opts = {}) {
 
 function init() {
   document.getElementById('cafeTitle').textContent = NAME || 'Dashboard';
-  // Set default date range to last 7 days
   const today = new Date().toISOString().split('T')[0];
   const week = new Date(Date.now() - 7*24*60*60*1000).toISOString().split('T')[0];
   document.getElementById('hFrom').value = week;
   document.getElementById('hTo').value = today;
+  applyDark();
   refresh();
+  // Auto-refresh every 10s; play sound if new orders arrived
   setInterval(() => {
     const which = document.querySelector('.tab.on').dataset.t;
     if (!['menu', 'settings', 'history'].includes(which)) refresh();
   }, 10000);
+  // Search filter
+  document.getElementById('orderSearch').addEventListener('input', filterOrders);
+}
+
+function filterOrders() {
+  const q = document.getElementById('orderSearch').value.toLowerCase();
+  document.querySelectorAll('#ordersGrid .card').forEach(card => {
+    card.style.display = q === '' || card.dataset.search.includes(q) ? '' : 'none';
+  });
 }
 
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
@@ -241,17 +301,39 @@ async function drawOrders() {
   if (!r) return;
   const orders = await r.json();
   const grid = document.getElementById('ordersGrid');
+
+  // Detect new orders and play sound
+  const newIds = new Set(orders.filter(o => o.status === 'placed').map(o => o.id));
+  if (lastOrderIds.size > 0) {
+    for (const id of newIds) {
+      if (!lastOrderIds.has(id)) { playBeep(); break; }
+    }
+  }
+  lastOrderIds = newIds;
+
   grid.innerHTML = '';
-  if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">No orders yet.</p>'; return; }
+  if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">No orders yet. Share your QR codes with customers!</p>'; return; }
   for (const x of orders) {
     const card = document.createElement('div');
     card.className = `card ${x.status}`;
+    // Search index: order id, seat, item names
+    const itemText = x.items.map(i => i.name.toLowerCase()).join(' ');
+    card.dataset.search = `#${x.id} ${(x.seat_label||'').toLowerCase()} ${itemText}`;
+
     const h = document.createElement('h3');
-    const l = document.createElement('span'); l.textContent = `#${x.id} - ${x.seat_label}`;
+    const l = document.createElement('span'); l.textContent = `#${x.id} — ${x.seat_label}`;
     const r2 = document.createElement('span'); r2.textContent = money(x.total);
     h.append(l, r2);
-    const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = x.status.toUpperCase() + (x.paid ? ' · PAID' : '');
-    const items = x.items.map(i => { const d = document.createElement('div'); d.className = 'li'; d.textContent = `${i.qty}x ${i.name}`; return d; });
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = x.status.toUpperCase() + (x.paid ? ' · PAID ✓' : '');
+    const items = x.items.map(i => { const d = document.createElement('div'); d.className = 'li'; d.textContent = `${i.qty}× ${i.name}`; return d; });
+    const elems = [h, meta, ...items];
+    if (x.notes) {
+      const note = document.createElement('div');
+      note.style.cssText = 'margin-top:6px;font-size:12px;background:#fff7e6;border-radius:6px;padding:5px 8px;color:#7a5a14';
+      note.textContent = '📝 ' + x.notes;
+      elems.push(note);
+    }
     const act = document.createElement('div'); act.className = 'act';
     if (NEXT[x.status]) {
       const btn = document.createElement('button'); btn.className = 'go';
@@ -263,9 +345,11 @@ async function drawOrders() {
       const pb = document.createElement('button'); pb.textContent = 'Mark paid';
       pb.onclick = () => markPaid(x.id); act.appendChild(pb);
     }
-    card.append(h, meta, ...items, act);
+    elems.push(act);
+    card.append(...elems);
     grid.appendChild(card);
   }
+  filterOrders();
 }
 
 async function drawKitchen() {
@@ -281,12 +365,21 @@ async function drawKitchen() {
     const h = document.createElement('h3');
     const l = document.createElement('span'); l.textContent = `#${x.id} - ${x.seat_label}`;
     h.appendChild(l);
-    const items = x.items.map(i => { const d = document.createElement('div'); d.className = 'li'; d.style.fontSize = '17px'; d.textContent = `${i.qty}x ${i.name}`; return d; });
+    const items = x.items.map(i => { const d = document.createElement('div'); d.className = 'li'; d.style.cssText = `font-size:17px${darkMode?';color:#fff':''}` ; d.textContent = `${i.qty}× ${i.name}`; return d; });
+    const elems = [h, ...items];
+    if (x.notes) {
+      const note = document.createElement('div');
+      note.style.cssText = 'margin-top:6px;font-size:13px;background:#fff7e6;border-radius:6px;padding:5px 8px;color:#7a5a14';
+      note.textContent = '📝 ' + x.notes;
+      elems.push(note);
+    }
     const act = document.createElement('div'); act.className = 'act';
     const btn = document.createElement('button'); btn.className = 'go';
     btn.textContent = LABEL[x.status]; btn.onclick = () => adv(x.id, NEXT[x.status]);
     act.appendChild(btn);
-    card.append(h, ...items, act);
+    elems.push(act);
+    card.append(...elems);
+    if (darkMode) { card.style.background = '#1e1e1e'; card.style.borderColor = '#333'; card.style.color = '#fff'; }
     grid.appendChild(card);
   }
 }

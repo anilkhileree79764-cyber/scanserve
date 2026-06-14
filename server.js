@@ -99,8 +99,25 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
     return { id: r.lastInsertRowid, cafe_id: cafeId };
   });
   const owner = tx();
+
+  // Seed a starter menu so new owners don't see an empty dashboard
+  const starterMenu = [
+    ['Cappuccino', 8000, 'Coffee', 5],
+    ['Masala Chai', 3000, 'Tea', 4],
+    ['Cold Coffee', 10000, 'Coffee', 5],
+    ['Veg Sandwich', 8000, 'Food', 8],
+    ['Chocolate Brownie', 6000, 'Desserts', 2],
+  ];
+  const insItem = db.prepare('INSERT INTO menu_items (cafe_id,name,price,category,prep_mins) VALUES (?,?,?,?,?)');
+  for (const [n, p, c, m] of starterMenu) insItem.run(cafeId, n, p, c, m);
+
+  // Add 4 starter tables
+  for (let i = 1; i <= 4; i++) {
+    db.prepare('INSERT INTO seats (id, cafe_id, label) VALUES (?,?,?)').run(`${cafeId}_t${i}`, cafeId, `Table ${i}`);
+  }
+
   const token = auth.createSession(owner);
-  res.json({ ok: true, token, cafe_id: cafeId, cafe_name: cafe_name.trim() });
+  res.json({ ok: true, token, cafe_id: cafeId, cafe_name: cafe_name.trim(), is_new: true });
 });
 
 app.post('/api/auth/login', authLimiter, (req, res) => {
@@ -174,7 +191,7 @@ app.get('/api/scan/:seatId', (req, res) => {
 });
 
 app.post('/api/order', orderLimiter, (req, res) => {
-  const { cafe_id, seat_id, items, name, phone, pay_method } = req.body;
+  const { cafe_id, seat_id, items, name, phone, pay_method, notes } = req.body;
   const cafe = getCafe(cafe_id);
   if (!cafe) return res.status(404).json({ error: 'Cafe not found' });
   if (!items || !items.length) return res.status(400).json({ error: 'Cart is empty' });
@@ -213,9 +230,9 @@ app.post('/api/order', orderLimiter, (req, res) => {
       cust = { id: r.lastInsertRowid, points: 0 };
     }
     const o = db.prepare(
-      `INSERT INTO orders (cafe_id,seat_id,seat_label,customer_id,total,pay_method,eta_mins)
-       VALUES (?,?,?,?,?,?,?)`
-    ).run(cafe_id, seat_id || null, seat ? seat.label : 'Takeaway', cust.id, total, pay_method || 'upi', eta);
+      `INSERT INTO orders (cafe_id,seat_id,seat_label,customer_id,total,pay_method,eta_mins,notes)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).run(cafe_id, seat_id || null, seat ? seat.label : 'Takeaway', cust.id, total, pay_method || 'upi', eta, notes || null);
     const insItem = db.prepare('INSERT INTO order_items (order_id,item_id,name,price,qty) VALUES (?,?,?,?,?)');
     for (const it of resolved) insItem.run(o.lastInsertRowid, it.id, it.name, it.price, it.qty);
     const earned = Math.floor((total / 100) * cafe.loyalty_rate / 100);

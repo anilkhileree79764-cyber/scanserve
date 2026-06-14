@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Welcome to ScanServe</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,sans-serif;margin:0;padding:0}
+  body{background:#faf7f2;color:#2b2117;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}
+  .box{background:#fff;border:1px solid #ece4d8;border-radius:20px;padding:32px;max-width:480px;width:100%}
+  h1{color:#b5651d;font-size:26px;margin-bottom:6px}
+  .sub{color:#8a7f72;font-size:15px;margin-bottom:28px}
+  .step{display:flex;gap:16px;align-items:flex-start;margin-bottom:20px;padding:16px;background:#faf7f2;border-radius:12px;border:1px solid #ece4d8}
+  .step.done{background:#e3f5ea;border-color:#a8d5b5}
+  .num{width:32px;height:32px;border-radius:50%;background:#b5651d;color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .step.done .num{background:#2e9e5b}
+  .step-title{font-weight:700;font-size:15px;margin-bottom:3px}
+  .step-desc{font-size:13px;color:#7a6f60}
+  .check{font-size:18px}
+  button.cta{width:100%;background:#b5651d;color:#fff;border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;margin-top:8px}
+  .skip{text-align:center;margin-top:12px;font-size:13px;color:#8a7f72;cursor:pointer}
+  .skip a{color:#b5651d;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Welcome to ScanServe! 🎉</h1>
+  <p class="sub">You're almost ready to take your first order. Complete these 3 steps:</p>
+
+  <div class="step done" id="s1">
+    <div class="num">✓</div>
+    <div>
+      <div class="step-title">Account created</div>
+      <div class="step-desc">Your cafe is set up with a starter menu and 4 tables.</div>
+    </div>
+  </div>
+
+  <div class="step" id="s2">
+    <div class="num">2</div>
+    <div>
+      <div class="step-title">Customize your menu</div>
+      <div class="step-desc">We've added 5 sample items. Edit prices, add your real items, remove what you don't serve.</div>
+    </div>
+  </div>
+
+  <div class="step" id="s3">
+    <div class="num">3</div>
+    <div>
+      <div class="step-title">Print your QR codes</div>
+      <div class="step-desc">Print one QR sticker per table and stick it on. Customers scan it to order.</div>
+    </div>
+  </div>
+
+  <button class="cta" onclick="goToDashboard()">Go to my dashboard &rarr;</button>
+  <p class="skip">or <a href="/qr.html">skip to print QR codes</a></p>
+</div>
+<script>
+  const name = localStorage.getItem('ss_name');
+  if (name) document.querySelector('h1').textContent = `Welcome, ${name}! 🎉`;
+  function goToDashboard() { location.href = '/dashboard.html'; }
+</script>
+</body>
+</html>

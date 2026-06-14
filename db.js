@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS customers (
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY AUTOINCREMENT, cafe_id TEXT NOT NULL, seat_id TEXT, seat_label TEXT,
   customer_id INTEGER, status TEXT DEFAULT 'placed', total INTEGER NOT NULL, pay_method TEXT DEFAULT 'upi',
-  paid INTEGER DEFAULT 0, eta_mins INTEGER DEFAULT 10, rating INTEGER, feedback TEXT,
+  paid INTEGER DEFAULT 0, eta_mins INTEGER DEFAULT 10, rating INTEGER, feedback TEXT, notes TEXT,
   rzp_order_id TEXT, rzp_payment_id TEXT, created_at TEXT DEFAULT (datetime('now')));
 
 CREATE TABLE IF NOT EXISTS order_items (

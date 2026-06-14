@@ -24,15 +24,17 @@
   button.cta:disabled{opacity:.4}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;justify-content:center;z-index:20}
   .modal.show{display:flex}
-  .sheet{background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:18px}
+  .sheet{background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:18px;max-height:90vh;overflow-y:auto}
   .sheet h2{margin:0 0 12px}
-  input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:15px;margin-bottom:10px}
+  input,textarea,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:15px;margin-bottom:10px;font-family:inherit}
+  textarea{resize:none;height:70px}
   .status-box{text-align:center;padding:20px}
   .clock{font-size:46px;font-weight:800;color:var(--accent)}
   .pill{display:inline-block;padding:5px 12px;border-radius:20px;background:#f0e6d6;font-size:13px;margin-top:8px}
   .stars span{font-size:30px;cursor:pointer;color:#ddd}.stars span.on{color:#f1c40f}
   .err{color:#c0392b;font-size:13px;min-height:18px}
-  .payinfo{background:#f0e6d6;border-radius:10px;padding:12px;font-size:13px;color:#7a5a14;margin-top:10px;line-height:1.4}
+  .payinfo{background:#f0e6d6;border-radius:10px;padding:12px;font-size:13px;color:#7a5a14;margin-top:4px;line-height:1.5}
+  .receipt-link{display:block;margin-top:10px;color:var(--accent);font-size:14px;text-align:center}
 </style>
 </head>
 <body>
@@ -51,10 +53,11 @@
     <h2>Your order</h2>
     <div id="summary"></div>
     <input id="cName" placeholder="Your name (optional)">
-    <input id="cPhone" placeholder="Phone number *" inputmode="numeric">
-    <div class="payinfo">Pay at the counter — by cash or the cafe's UPI scanner — when you collect your order.</div>
+    <input id="cPhone" placeholder="Phone number *" inputmode="numeric" maxlength="10">
+    <textarea id="cNotes" placeholder="Special requests? (e.g. no sugar, extra spicy) — optional"></textarea>
+    <div class="payinfo">💰 Pay at the counter — cash or cafe's UPI — when you collect your order.</div>
     <div class="err" id="err"></div>
-    <button class="cta" id="placeBtn">Place order</button>
+    <button class="cta" id="placeBtn" style="margin-top:10px">Place order</button>
   </div>
 </div>
 
@@ -65,10 +68,13 @@
       <div class="clock" id="clock">-</div>
       <div>minutes left</div>
       <div class="pill" id="pointPill"></div>
-      <div style="margin-top:10px"><a id="receiptLink" href="#" target="_blank" style="color:#b5651d;font-size:14px">View / print receipt &rarr;</a></div>
+      <a class="receipt-link" id="receiptLink" href="#" target="_blank">View / print receipt &rarr;</a>
       <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
       <div style="font-weight:600;margin-bottom:6px">How was it?</div>
-      <div class="stars" id="stars"><span data-v="1">&#9733;</span><span data-v="2">&#9733;</span><span data-v="3">&#9733;</span><span data-v="4">&#9733;</span><span data-v="5">&#9733;</span></div>
+      <div class="stars" id="stars">
+        <span data-v="1">&#9733;</span><span data-v="2">&#9733;</span>
+        <span data-v="3">&#9733;</span><span data-v="4">&#9733;</span><span data-v="5">&#9733;</span>
+      </div>
       <input id="fbText" placeholder="Any comment? (optional)" style="margin-top:10px">
       <button class="cta" id="fbBtn">Submit feedback</button>
     </div>
@@ -90,45 +96,76 @@ async function load(){
   document.getElementById('seatLabel').textContent='Seat: '+d.seat.label;
   render();
 }
+
 function render(){
   const wrap=document.getElementById('menu'); wrap.innerHTML='';
   let cat='';
   for(const m of MENU){
-    if(m.category!==cat){cat=m.category; const h=document.createElement('div');h.className='cat';h.textContent=cat;wrap.appendChild(h);}
+    if(m.category!==cat){
+      cat=m.category;
+      const h=document.createElement('div'); h.className='cat'; h.textContent=cat; wrap.appendChild(h);
+    }
     const q=cart[m.id]||0;
     const el=document.createElement('div'); el.className='item'+(m.available?'':' soldout');
-    el.innerHTML=`<div><h3>${m.name}</h3><p>~${m.prep_mins} min</p>${m.available?'':'<span class="badge">SOLD OUT</span>'}</div>
-      <div style="text-align:right"><div class="price">&#8377;${(m.price/100).toFixed(0)}</div>
-      <div class="qty">${q?`<button class="qbtn" data-d="${m.id}">-</button><b>${q}</b>`:''}<button class="qbtn" data-a="${m.id}">+</button></div></div>`;
+    const left=document.createElement('div');
+    const name=document.createElement('h3'); name.textContent=m.name;
+    const prep=document.createElement('p'); prep.textContent=`~${m.prep_mins} min`;
+    left.append(name,prep);
+    if(!m.available){ const b=document.createElement('span'); b.className='badge'; b.textContent='SOLD OUT'; left.appendChild(b); }
+    const right=document.createElement('div'); right.style.textAlign='right';
+    const price=document.createElement('div'); price.className='price'; price.textContent=`₹${(m.price/100).toFixed(0)}`;
+    const qtyDiv=document.createElement('div'); qtyDiv.className='qty';
+    if(q){
+      const minus=document.createElement('button'); minus.className='qbtn'; minus.textContent='-';
+      minus.onclick=()=>{cart[m.id]--;if(cart[m.id]<=0)delete cart[m.id];render();updateBar();};
+      const count=document.createElement('b'); count.textContent=q;
+      qtyDiv.append(minus,count);
+    }
+    const plus=document.createElement('button'); plus.className='qbtn'; plus.textContent='+';
+    plus.onclick=()=>{cart[m.id]=(cart[m.id]||0)+1;render();updateBar();};
+    qtyDiv.appendChild(plus);
+    right.append(price,qtyDiv);
+    el.append(left,right);
     wrap.appendChild(el);
   }
-  wrap.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{cart[b.dataset.a]=(cart[b.dataset.a]||0)+1;render();updateBar();});
-  wrap.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{cart[b.dataset.d]--;if(cart[b.dataset.d]<=0)delete cart[b.dataset.d];render();updateBar();});
   updateBar();
 }
-function cartTotal(){let t=0;for(const id in cart){const m=MENU.find(x=>x.id==id);t+=m.price*cart[id];}return t;}
+
+function cartTotal(){let t=0;for(const id in cart){const m=MENU.find(x=>x.id==id);if(m)t+=m.price*cart[id];}return t;}
+
 function updateBar(){
   const n=Object.values(cart).reduce((a,b)=>a+b,0);
   const btn=document.getElementById('checkoutBtn');
   btn.disabled=n===0;
-  btn.textContent=n?`Review order - &#8377;${(cartTotal()/100).toFixed(0)} (${n})`:'Add items to order';
+  btn.textContent=n?`Review order — ₹${(cartTotal()/100).toFixed(0)} (${n} items)`:'Add items to order';
 }
+
 document.getElementById('checkoutBtn').onclick=()=>{
   const s=document.getElementById('summary'); s.innerHTML='';
-  for(const id in cart){const m=MENU.find(x=>x.id==id);
-    s.innerHTML+=`<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>${cart[id]}x ${m.name}</span><b>&#8377;${(m.price*cart[id]/100).toFixed(0)}</b></div>`;}
-  s.innerHTML+=`<hr style="border:none;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Total</span><span>&#8377;${(cartTotal()/100).toFixed(0)}</span></div>`;
+  for(const id in cart){
+    const m=MENU.find(x=>x.id==id);
+    const row=document.createElement('div'); row.style.cssText='display:flex;justify-content:space-between;margin-bottom:6px';
+    const l=document.createElement('span'); l.textContent=`${cart[id]}x ${m.name}`;
+    const r=document.createElement('b'); r.textContent=`₹${(m.price*cart[id]/100).toFixed(0)}`;
+    row.append(l,r); s.appendChild(row);
+  }
+  const hr=document.createElement('hr'); hr.style.cssText='border:none;border-top:1px solid var(--line)'; s.appendChild(hr);
+  const tot=document.createElement('div'); tot.style.cssText='display:flex;justify-content:space-between;font-weight:700';
+  tot.innerHTML=`<span>Total</span><span>₹${(cartTotal()/100).toFixed(0)}</span>`; s.appendChild(tot);
   document.getElementById('checkout').classList.add('show');
 };
+
 document.getElementById('placeBtn').onclick=async()=>{
   const phone=document.getElementById('cPhone').value.trim();
+  const notes=document.getElementById('cNotes').value.trim();
   const err=document.getElementById('err'); err.textContent='';
-  if(phone.length<8){err.textContent='Please enter a valid phone number.';return;}
+  if(!/^\d{10}$/.test(phone)){err.textContent='Please enter a valid 10-digit phone number.';return;}
   const items=Object.keys(cart).map(id=>({id:+id,qty:cart[id]}));
+  const btn=document.getElementById('placeBtn'); btn.disabled=true; btn.textContent='Placing order...';
   const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({cafe_id:CAFE.id,seat_id:seatId,items,name:document.getElementById('cName').value,phone,pay_method:'counter'})});
+    body:JSON.stringify({cafe_id:CAFE.id,seat_id:seatId,items,name:document.getElementById('cName').value,phone,notes,pay_method:'counter'})});
   const d=await r.json();
-  if(!r.ok){err.textContent=d.error||'Could not place order';return;}
+  if(!r.ok){err.textContent=d.error||'Could not place order';btn.disabled=false;btn.textContent='Place order';return;}
   ORDER_ID=d.orderId;
   document.getElementById('checkout').classList.remove('show');
   document.getElementById('pointPill').textContent=`+${d.points_earned} loyalty points earned`;
@@ -136,23 +173,28 @@ document.getElementById('placeBtn').onclick=async()=>{
   document.getElementById('statusModal').classList.add('show');
   poll();
 };
+
 async function poll(){
   if(!ORDER_ID)return;
   const r=await fetch(`/api/order/${ORDER_ID}/status`); const d=await r.json();
-  const map={placed:'Order received',preparing:'Being prepared',ready:'Ready! Pick up',served:'Enjoy!'};
+  const map={placed:'✅ Order received',preparing:'👨‍🍳 Being prepared',ready:'🔔 Ready! Come collect',served:'😊 Enjoy!'};
   document.getElementById('statusText').textContent=map[d.status]||d.status;
   document.getElementById('clock').textContent=d.remaining_mins;
   if(d.status!=='served') setTimeout(poll,15000);
 }
+
 document.querySelectorAll('#stars span').forEach(s=>s.onclick=()=>{
   rating=+s.dataset.v;
   document.querySelectorAll('#stars span').forEach(x=>x.classList.toggle('on',+x.dataset.v<=rating));
 });
+
 document.getElementById('fbBtn').onclick=async()=>{
   await fetch(`/api/order/${ORDER_ID}/feedback`,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({rating,feedback:document.getElementById('fbText').value})});
-  document.getElementById('fbBtn').textContent='Thank you!';
+  document.getElementById('fbBtn').textContent='Thank you! ❤️';
+  document.getElementById('fbBtn').disabled=true;
 };
+
 load();
 </script>
 </body>
