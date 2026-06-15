@@ -196,11 +196,13 @@ async function launchDemo(e){
     localStorage.setItem('ss_cafe',d.cafe_id);
     localStorage.setItem('ss_name',d.cafe_name);
     localStorage.setItem('ss_tour_done','1'); // skip tour in demo
-    // wire the customer view to a real table from this demo cafe
-    const seats=await fetch('/api/cafe/'+d.cafe_id+'/seats',{headers:{Authorization:'Bearer '+d.token}}).then(x=>x.json());
-    if(seats[0]){ const c=document.getElementById('demoCust'); c.href='/order.html?seat='+seats[0].id; c.style.opacity=1; c.style.pointerEvents='auto'; c.setAttribute('target','_blank'); }
+    // wire the customer view to a real table — best-effort, must not block the redirect
+    try{
+      const seats=await fetch('/api/cafe/'+d.cafe_id+'/seats',{headers:{Authorization:'Bearer '+d.token}}).then(x=>x.json());
+      if(seats[0]){ const c=document.getElementById('demoCust'); c.href='/order.html?seat='+seats[0].id; c.style.opacity=1; c.style.pointerEvents='auto'; c.setAttribute('target','_blank'); }
+    }catch(_){}
     location.href='/dashboard.html';
-  }catch(err){ btn.textContent='Try again'; }
+  }catch(err){ btn.textContent='Try again — tap once more'; }
 }
 </script>
 
