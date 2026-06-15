@@ -51,6 +51,14 @@ test('health check', async () => {
   assert.equal(r.status, 200);
 });
 
+test('CSP allows inline on* handlers (onclick) — UI buttons depend on it', async () => {
+  const r = await get('/login.html');
+  const csp = r.headers.get('content-security-policy') || '';
+  // helmet defaults to `script-src-attr 'none'` which silently kills every inline onclick
+  assert.ok(/script-src-attr[^;]*'unsafe-inline'/.test(csp), 'script-src-attr must allow unsafe-inline, got: ' + csp);
+  assert.ok(!/script-src-attr 'none'/.test(csp), 'script-src-attr must not be none');
+});
+
 test('register creates a cafe with trial + starter data', async () => {
   const r = await post('/api/auth/register', { cafe_name: 'TestCafe', email: `o${Date.now()}@t.com`, password: 'password123' });
   assert.equal(r.status, 200);

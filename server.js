@@ -16,6 +16,9 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com", "checkout.razorpay.com"],
+      // Allow inline on* handlers (onclick="...") — the UI relies on them.
+      // Without this, helmet's default `script-src-attr 'none'` blocks every inline handler.
+      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
       frameSrc: ["'self'", "api.razorpay.com", "checkout.razorpay.com"],
