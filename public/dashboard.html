@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cafe Dashboard — ScanServe</title>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <style>
   :root{--bg:#f4f5f7;--card:#fff;--ink:#1f2733;--accent:#b5651d;--muted:#7a8694;--line:#e6e9ee;--green:#2e9e5b;--amber:#e08a1e}
   *{box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
@@ -103,7 +104,7 @@
 <header>
   <h1 id="cafeTitle">Dashboard</h1>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button class="ghost" onclick="enableNotifs()" id="notifBtn" title="Get a desktop alert for every new order">🔔 Alerts</button>
+    <button class="ghost" onclick="enableNotifs()" id="notifBtn" aria-label="Enable desktop alerts for new orders" title="Get a desktop alert for every new order">🔔 Alerts</button>
     <a href="/qr.html">Print QR codes</a>
     <button class="ghost" onclick="logout()">Log out</button>
   </div>
@@ -137,7 +138,7 @@
   <div id="kitchen" class="pane hide">
     <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
       <span style="font-size:14px;color:var(--muted)">Active kitchen orders</span>
-      <button id="darkToggle" onclick="toggleDark()" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px">🌙 Dark mode</button>
+      <button id="darkToggle" onclick="toggleDark()" aria-label="Toggle dark mode for the kitchen view" style="border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px">🌙 Dark mode</button>
     </div>
     <div class="station-filter" id="stationFilter"></div>
     <div class="grid" id="kitchenGrid"></div>
@@ -155,7 +156,8 @@
       <select id="niType" style="max-width:110px;padding:9px;border:1px solid var(--line);border-radius:8px"><option value="veg">🟢 Veg</option><option value="nonveg">🔴 Non-veg</option><option value="egg">🟡 Egg</option></select>
       <select id="niSpicy" style="max-width:100px;padding:9px;border:1px solid var(--line);border-radius:8px"><option value="0">Not spicy</option><option value="1">🌶️ Mild</option><option value="2">🌶️🌶️ Medium</option><option value="3">🌶️🌶️🌶️ Hot</option></select>
       <input id="niStation" placeholder="Station (Kitchen/Bar)" style="max-width:140px" value="Kitchen">
-      <input id="niImg" placeholder="Photo URL (optional)" style="min-width:160px">
+      <input id="niImg" placeholder="Photo URL (or upload →)" style="min-width:150px">
+      <label class="addbtn" style="background:#555;cursor:pointer">📷 Upload<input id="niImgFile" type="file" accept="image/*" style="display:none" onchange="uploadPhoto(this,'niImg')"></label>
       <input id="niDesc" placeholder="Short description (optional)" style="min-width:160px">
       <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input id="niCombo" type="checkbox" style="width:auto">Combo</label>
       <button class="addbtn" onclick="addItem()">+ Add item</button>
@@ -604,10 +606,21 @@ async function drawMenu() {
     tr.dataset.img = i.image_url || '';
     tr.dataset.desc = i.description || '';
     tr.dataset.combo = i.is_combo || 0;
-    // photo thumbnail
+    // photo thumbnail + upload
     const photoTd = document.createElement('td');
-    if (i.image_url) { const im = document.createElement('img'); im.src = i.image_url; im.style.cssText = 'width:40px;height:40px;border-radius:6px;object-fit:cover'; im.onerror = () => im.replaceWith(document.createTextNode('—')); photoTd.appendChild(im); }
-    else photoTd.textContent = '—';
+    const thumb = document.createElement('div');
+    const renderThumb = () => {
+      thumb.innerHTML = '';
+      if (tr.dataset.img) { const im = document.createElement('img'); im.src = tr.dataset.img; im.alt = i.name; im.style.cssText = 'width:40px;height:40px;border-radius:6px;object-fit:cover;display:block'; im.onerror = () => { im.replaceWith(document.createTextNode('—')); }; thumb.appendChild(im); }
+      else thumb.textContent = '—';
+    };
+    renderThumb();
+    const upLabel = document.createElement('label');
+    upLabel.textContent = '📷'; upLabel.title = 'Upload photo'; upLabel.style.cssText = 'cursor:pointer;font-size:13px;display:inline-block;margin-top:3px';
+    const upInput = document.createElement('input'); upInput.type = 'file'; upInput.accept = 'image/*'; upInput.style.display = 'none';
+    upInput.onchange = async () => { const url = await uploadFile(upInput); if (url) { tr.dataset.img = url; renderThumb(); saveItem(i.id, saveBtn, tr); } upInput.value = ''; };
+    upLabel.appendChild(upInput);
+    photoTd.append(thumb, upLabel);
     const nameInput = document.createElement('input'); nameInput.className = 'e-name'; nameInput.value = i.name; nameInput.maxLength = 100;
     const priceInput = document.createElement('input'); priceInput.className = 'e-price'; priceInput.type = 'number'; priceInput.value = (i.price/100); priceInput.min = 0;
     const catInput = document.createElement('input'); catInput.className = 'e-cat'; catInput.value = i.category || '';
@@ -635,6 +648,26 @@ async function drawMenu() {
     });
     tbody.appendChild(tr);
   }
+}
+
+// Upload a chosen image file → returns the stored URL (or null)
+async function uploadFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return null;
+  if (file.size > 5 * 1024 * 1024) { alert('Image is too large (max 5 MB).'); input.value = ''; return null; }
+  const dataUrl = await new Promise((resolve, reject) => {
+    const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.onerror = reject; fr.readAsDataURL(file);
+  });
+  const r = await api(`/api/cafe/${CAFE}/upload`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: dataUrl }) });
+  const d = await r.json();
+  if (!d.ok) { alert(d.error || 'Upload failed.'); return null; }
+  return d.url;
+}
+// For the add-item form: upload then drop the URL into a text input
+async function uploadPhoto(input, targetId) {
+  const url = await uploadFile(input);
+  if (url) document.getElementById(targetId).value = url;
+  input.value = '';
 }
 
 async function addItem() {
@@ -997,21 +1030,52 @@ async function loadWaiterCalls() {
 }
 
 // ===== TRIAL BANNER =====
+let TRIAL = null;
 async function loadTrial() {
   const r = await api(`/api/cafe/${CAFE}/trial`); if (!r) return;
-  const t = await r.json();
+  const t = await r.json(); TRIAL = t;
   const b = document.getElementById('trialBanner');
-  if (t.plan !== 'free' || t.days_left === null) { b.classList.add('hide'); return; }
+  // Paid & active with comfortable runway → no banner
+  if (t.plan === 'paid' && t.active && t.days_left > 5) { b.classList.add('hide'); return; }
   b.classList.remove('hide');
-  b.classList.toggle('expired', t.days_left <= 0);
+  b.classList.toggle('expired', !t.active);
   b.innerHTML = '';
   const s = document.createElement('span');
-  s.textContent = t.days_left > 0
-    ? `⏳ Free trial — ${t.days_left} day${t.days_left>1?'s':''} left. Upgrade to keep ScanServe running for your cafe.`
-    : '⚠️ Your free trial has ended. Upgrade to continue using ScanServe.';
-  const btn = document.createElement('button'); btn.textContent = 'Upgrade — ₹499/mo';
-  btn.onclick = () => alert('To upgrade, contact ScanServe support. (Payment integration is set up separately.)');
+  if (!t.active) s.textContent = '⚠️ Your subscription has ended — customers can no longer place online orders. Renew to switch ordering back on.';
+  else if (t.plan === 'paid') s.textContent = `✅ Paid plan — ${t.days_left} day${t.days_left>1?'s':''} left. Renew to avoid interruption.`;
+  else s.textContent = `⏳ Free trial — ${t.days_left} day${t.days_left>1?'s':''} left. Subscribe to keep online ordering running.`;
+  const btn = document.createElement('button');
+  btn.textContent = (!t.active || t.plan === 'paid') ? `Renew — ₹${t.price_rupees}/mo` : `Subscribe — ₹${t.price_rupees}/mo`;
+  btn.onclick = startBilling;
   b.append(s, btn);
+}
+
+async function startBilling() {
+  const r = await api(`/api/cafe/${CAFE}/billing/start`, { method: 'POST' });
+  if (!r) return;
+  const o = await r.json();
+  if (o.error) { alert(o.error); return; }
+  if (o.demo) {
+    // No live payment keys configured → simulate a successful payment (demo mode)
+    if (!confirm('Demo billing mode (no payment gateway configured).\n\nActivate a 30-day paid plan now for testing?')) return;
+    await finishBilling({ rzp_order_id: o.order_id, rzp_payment_id: 'demo', signature: 'demo' });
+    return;
+  }
+  // Live mode → open Razorpay checkout
+  if (typeof Razorpay === 'undefined') { alert('Payment library still loading — please try again in a moment.'); return; }
+  const rzp = new Razorpay({
+    key: o.key_id, amount: o.amount, currency: 'INR', name: NAME || 'ScanServe', description: 'Monthly subscription',
+    order_id: o.order_id,
+    handler: (resp) => finishBilling({ rzp_order_id: resp.razorpay_order_id, rzp_payment_id: resp.razorpay_payment_id, signature: resp.razorpay_signature }),
+  });
+  rzp.open();
+}
+
+async function finishBilling(payload) {
+  const r = await api(`/api/cafe/${CAFE}/billing/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const d = await r.json();
+  if (d.ok) { alert('🎉 Payment successful! Your plan is active for 30 more days.'); loadTrial(); }
+  else alert(d.error || 'Payment could not be verified.');
 }
 
 // ===== DESKTOP NOTIFICATIONS =====

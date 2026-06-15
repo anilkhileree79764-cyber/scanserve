@@ -107,6 +107,8 @@ addColumn('orders', 'notes', 'TEXT');
 addColumn('orders', 'priority', 'INTEGER DEFAULT 0');
 addColumn('order_items', 'note', 'TEXT');
 addColumn('cafes', 'trial_ends', 'TEXT');
+addColumn('cafes', 'paid_until', 'TEXT');
+addColumn('sessions', 'actor_kind', "TEXT DEFAULT 'owner'");
 addColumn('cafes', 'logo_url', 'TEXT');
 addColumn('cafes', 'brand_color', "TEXT DEFAULT '#b5651d'");
 addColumn('cafes', 'google_review_url', 'TEXT');

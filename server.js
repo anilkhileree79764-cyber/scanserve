@@ -15,9 +15,11 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com", "checkout.razorpay.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
+      frameSrc: ["'self'", "api.razorpay.com", "checkout.razorpay.com"],
+      connectSrc: ["'self'", "api.razorpay.com", "lumberjack.razorpay.com"],
     },
   },
 }));
@@ -30,7 +32,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '6mb' })); // 6mb allows base64 menu photo uploads
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Rate limiting — global: 200 req/min per IP
@@ -58,6 +60,17 @@ const orderLimiter = rateLimit({
 });
 
 const getCafe = (id) => db.prepare('SELECT * FROM cafes WHERE id = ?').get(id);
+
+// A cafe is "active" (can take orders) if on a paid plan that hasn't lapsed,
+// or still inside its free trial.
+const SUB_PRICE = 49900; // ₹499/month in paise
+function cafeActive(cafe) {
+  if (!cafe) return false;
+  const now = Date.now();
+  if (cafe.plan === 'paid' && cafe.paid_until && new Date(cafe.paid_until + 'Z').getTime() > now) return true;
+  if (cafe.trial_ends && new Date(cafe.trial_ends + 'Z').getTime() > now) return true;
+  return false;
+}
 
 // Audit log helper — records owner actions for accountability
 function audit(cafeId, actor, action, detail) {
@@ -114,6 +127,27 @@ scheduleDailySoldoutReset();
 setInterval(() => {
   db.prepare("DELETE FROM password_resets WHERE created_at < datetime('now', '-1 hour')").run();
 }, 60 * 60 * 1000);
+
+// Purge demo cafes older than 1 day (they pile up from the landing-page sandbox)
+function purgeOldDemos() {
+  const stale = db.prepare("SELECT id FROM cafes WHERE id LIKE 'demo_%' AND created_at < datetime('now','-1 day')").all();
+  for (const { id } of stale) deleteCafeCascade(id);
+  if (stale.length) console.log(`[Cleanup] removed ${stale.length} old demo cafe(s).`);
+}
+setInterval(purgeOldDemos, 60 * 60 * 1000);
+purgeOldDemos();
+
+// Shared cascade delete for a cafe and all its data
+function deleteCafeCascade(cafeId) {
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE cafe_id=?)').run(cafeId);
+    for (const t of ['orders', 'customers', 'menu_items', 'seats', 'expenses', 'staff', 'waiter_calls', 'audit_log', 'sessions', 'owners', 'password_resets', 'cafes']) {
+      const col = t === 'cafes' ? 'id' : 'cafe_id';
+      try { db.prepare(`DELETE FROM ${t} WHERE ${col}=?`).run(cafeId); } catch {}
+    }
+  });
+  tx();
+}
 
 // ===== AUTH =====
 
@@ -183,7 +217,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
   if (!owner || !auth.verifyPassword(password, owner.pass_hash))
     return res.status(401).json({ error: 'Wrong email or password' });
-  const token = auth.createSession(owner);
+  const token = auth.createSession(owner, role === 'owner' ? 'owner' : 'staff');
   const cafe = getCafe(owner.cafe_id);
   res.json({ ok: true, token, cafe_id: owner.cafe_id, cafe_name: cafe.name, role });
 });
@@ -296,6 +330,7 @@ app.post('/api/order', orderLimiter, (req, res) => {
   const { cafe_id, seat_id, items, name, phone, pay_method, notes } = req.body;
   const cafe = getCafe(cafe_id);
   if (!cafe) return res.status(404).json({ error: 'Cafe not found' });
+  if (!cafeActive(cafe)) return res.status(402).json({ error: 'Online ordering is paused for this cafe. Please order at the counter.' });
   if (!items || !items.length) return res.status(400).json({ error: 'Cart is empty' });
   if (!phone) return res.status(400).json({ error: 'Phone required for receipt & loyalty' });
   if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a valid 10-digit phone number' });
@@ -506,6 +541,24 @@ app.post('/api/menu/:id', auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Photo upload — accepts a data URL (data:image/...;base64,xxxx), saves to /public/uploads
+const UPLOAD_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+app.post('/api/cafe/:cafeId/upload', auth.requireAuth, (req, res) => {
+  const { data } = req.body;
+  const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(data || '');
+  if (!m) return res.status(400).json({ error: 'Please choose an image file.' });
+  const ext = UPLOAD_TYPES[m[1].toLowerCase()];
+  if (!ext) return res.status(400).json({ error: 'Use a JPG, PNG, WEBP or GIF image.' });
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 5 * 1024 * 1024) return res.status(413).json({ error: 'Image is too large (max 5 MB).' });
+  const fs = require('fs');
+  const dir = path.join(__dirname, 'public', 'uploads');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const name = `${req.cafe_id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+  fs.writeFileSync(path.join(dir, name), buf);
+  res.json({ ok: true, url: `/uploads/${name}` });
+});
+
 // Toggle order priority (rush flag)
 app.post('/api/order/:id/priority', auth.requireAuth, (req, res) => {
   const o = db.prepare('SELECT cafe_id FROM orders WHERE id = ?').get(req.params.id);
@@ -603,12 +656,39 @@ app.post('/api/cafe/:cafeId/settings', auth.requireAuth, (req, res) => {
 // ===== TRIAL / PLAN =====
 app.get('/api/cafe/:cafeId/trial', auth.requireAuth, (req, res) => {
   const cafe = getCafe(req.params.cafeId);
+  const active = cafeActive(cafe);
   let daysLeft = null;
-  if (cafe.trial_ends) {
-    const ms = new Date(cafe.trial_ends + 'Z').getTime() - Date.now();
-    daysLeft = Math.ceil(ms / 86400000);
-  }
-  res.json({ plan: cafe.plan, trial_ends: cafe.trial_ends, days_left: daysLeft, expired: cafe.plan === 'free' && daysLeft !== null && daysLeft <= 0 });
+  const ref = cafe.plan === 'paid' && cafe.paid_until ? cafe.paid_until : cafe.trial_ends;
+  if (ref) daysLeft = Math.ceil((new Date(ref + 'Z').getTime() - Date.now()) / 86400000);
+  res.json({
+    plan: cafe.plan, trial_ends: cafe.trial_ends, paid_until: cafe.paid_until,
+    days_left: daysLeft, active, expired: !active,
+    price_rupees: SUB_PRICE / 100, demo_billing: !payments.LIVE,
+  });
+});
+
+// ===== BILLING (owner) =====
+// Start a subscription payment (₹499 / 30 days). Demo mode auto-succeeds on verify.
+app.post('/api/cafe/:cafeId/billing/start', auth.requireAuth, auth.requireOwner, async (req, res) => {
+  try {
+    const rzp = await payments.createOrder(SUB_PRICE, `sub_${req.params.cafeId}_${Date.now()}`);
+    res.json({ ...rzp, amount: SUB_PRICE });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+// Verify payment → extend paid_until by 30 days and flip to paid plan.
+app.post('/api/cafe/:cafeId/billing/verify', auth.requireAuth, auth.requireOwner, (req, res) => {
+  const { rzp_order_id, rzp_payment_id, signature } = req.body;
+  if (!payments.verifySignature(rzp_order_id, rzp_payment_id, signature))
+    return res.status(400).json({ error: 'Payment verification failed' });
+  const cafe = getCafe(req.params.cafeId);
+  // extend from the later of now or current paid_until
+  const base = (cafe.paid_until && new Date(cafe.paid_until + 'Z').getTime() > Date.now())
+    ? `'${cafe.paid_until}'` : "datetime('now')";
+  db.prepare(`UPDATE cafes SET plan='paid', paid_until=datetime(${base}, '+30 days') WHERE id=?`).run(req.params.cafeId);
+  audit(req.cafe_id, req.owner_email, 'billing.paid', rzp_payment_id || 'demo');
+  const updated = getCafe(req.params.cafeId);
+  res.json({ ok: true, plan: 'paid', paid_until: updated.paid_until });
 });
 
 // ===== WAITER CALLS (owner) =====
@@ -679,7 +759,7 @@ app.get('/api/cafe/:cafeId/peak-hours', auth.requireAuth, (req, res) => {
 app.get('/api/cafe/:cafeId/staff', auth.requireAuth, (req, res) => {
   res.json(db.prepare('SELECT id,name,email,role,created_at FROM staff WHERE cafe_id=? ORDER BY created_at').all(req.params.cafeId));
 });
-app.post('/api/cafe/:cafeId/staff', auth.requireAuth, (req, res) => {
+app.post('/api/cafe/:cafeId/staff', auth.requireAuth, auth.requireOwner, (req, res) => {
   const { name, email, password, role } = req.body;
   if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password required' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
@@ -691,7 +771,7 @@ app.post('/api/cafe/:cafeId/staff', auth.requireAuth, (req, res) => {
   audit(req.cafe_id, req.owner_email, 'staff.add', email);
   res.json({ ok: true, id: r.lastInsertRowid });
 });
-app.post('/api/staff/:id/delete', auth.requireAuth, (req, res) => {
+app.post('/api/staff/:id/delete', auth.requireAuth, auth.requireOwner, (req, res) => {
   const s = db.prepare('SELECT cafe_id,email FROM staff WHERE id=?').get(req.params.id);
   if (!s || s.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not yours' });
   db.prepare('DELETE FROM staff WHERE id=?').run(req.params.id);
@@ -754,16 +834,8 @@ app.get('/api/cafe/:cafeId/backup', auth.requireAuth, (req, res) => {
 });
 
 // ===== ACCOUNT DELETION (GDPR-style) =====
-app.post('/api/cafe/:cafeId/delete-account', auth.requireAuth, (req, res) => {
-  const c = req.params.cafeId;
-  const tx = db.transaction(() => {
-    db.prepare('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE cafe_id=?)').run(c);
-    for (const t of ['orders', 'customers', 'menu_items', 'seats', 'expenses', 'staff', 'waiter_calls', 'audit_log', 'sessions', 'owners', 'cafes']) {
-      const col = t === 'cafes' ? 'id' : 'cafe_id';
-      try { db.prepare(`DELETE FROM ${t} WHERE ${col}=?`).run(c); } catch {}
-    }
-  });
-  tx();
+app.post('/api/cafe/:cafeId/delete-account', auth.requireAuth, auth.requireOwner, (req, res) => {
+  deleteCafeCascade(req.params.cafeId);
   res.json({ ok: true, message: 'Account and all data permanently deleted.' });
 });
 
@@ -794,5 +866,20 @@ app.post('/api/demo', authLimiter, (req, res) => {
   res.json({ ok: true, token, cafe_id: cafeId, cafe_name: 'Demo Cafe', is_new: false, demo: true });
 });
 
+// Payload-too-large (oversized photo upload) → friendly message
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'Image is too large. Please use one under 5 MB.' });
+  console.error(`[Error] ${req.method} ${req.url}:`, err && err.message);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Something went wrong. Please try again.' });
+});
+
+// Don't let an unexpected error crash the whole server (one cafe shouldn't take down all)
+process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+process.on('uncaughtException', (e) => console.error('[uncaughtException]', e));
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`ScanServe running: http://localhost:${PORT}`));
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`ScanServe running: http://localhost:${PORT}`));
+}
+module.exports = app;

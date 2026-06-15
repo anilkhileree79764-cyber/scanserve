@@ -29,7 +29,10 @@ A complete, ready-to-sell web app that lets cafe customers **scan a QR code on t
 - Win-back campaign — SMS/WhatsApp offer to customers inactive 30+ days
 - Order history with date filter and CSV export; full data backup (JSON) anytime
 - Cafe settings — name, UPI ID, loyalty rate, logo, brand colour, Google review link
-- 14-day free trial with upgrade prompt; instant demo sandbox from the landing page
+- 14-day free trial that **actually locks** online ordering when it lapses (the paywall)
+- Real subscription billing — ₹499/month via Razorpay (demo mode without keys); renew extends 30 days
+- Upload menu photos straight from your phone (no image-host URL needed)
+- Instant demo sandbox from the landing page (auto-cleaned daily)
 - Onboarding tour for first-time owners; account deletion (delete all data)
 - Email verification, automated daily DB backups, /healthz uptime endpoint
 - Printable QR code sheet — one per table, print and stick

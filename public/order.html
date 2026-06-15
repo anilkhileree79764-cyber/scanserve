@@ -66,12 +66,12 @@
 </header>
 
 <div class="toolbar">
-  <input id="search" placeholder="Search the menu…">
-  <button id="repeatBtn">🔁 My usual</button>
+  <input id="search" placeholder="Search the menu…" aria-label="Search the menu">
+  <button id="repeatBtn" aria-label="Repeat my last order">🔁 My usual</button>
 </div>
-<div class="wrap" id="menu"></div>
+<div class="wrap" id="menu" aria-live="polite"></div>
 
-<button class="fab" id="waiterBtn">🛎️ Call waiter</button>
+<button class="fab" id="waiterBtn" aria-label="Call the waiter to your table">🛎️ Call waiter</button>
 
 <div class="bar">
   <button class="cta" id="checkoutBtn" disabled>Add items to order</button>
