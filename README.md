@@ -130,7 +130,7 @@ Without these, the app runs in demo mode — fully functional for ordering and t
 ## Tech stack
 
 - **Backend:** Node.js + Express
-- **Database:** SQLite via Node's built-in `node:sqlite` (no native build, works everywhere)
+- **Database:** SQLite via libSQL — a local `cafe.db` file for development, or a free durable **Turso** cloud database in production (set `TURSO_DATABASE_URL`)
 - **Frontend:** Plain HTML/CSS/JS — no framework, loads instantly
 - **Auth:** scrypt password hashing, bearer token sessions
 - **Payments:** Razorpay (demo mode by default)

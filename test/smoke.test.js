@@ -114,7 +114,7 @@ test('expired free cafe is blocked from taking online orders (the paywall)', asy
   process.env.DB_PATH = DB_PATH;
   delete require.cache[require.resolve('../db')];
   const db = require('../db');
-  db.prepare("UPDATE cafes SET plan='free', paid_until=NULL, trial_ends=datetime('now','-1 day') WHERE id=?").run(S.cafe);
+  await db.prepare("UPDATE cafes SET plan='free', paid_until=NULL, trial_ends=datetime('now','-1 day') WHERE id=?").run(S.cafe);
   const r = await post('/api/order', { cafe_id: S.cafe, seat_id: S.seat, phone: '9876543210', items: [{ id: S.item, qty: 1 }] });
   assert.equal(r.status, 402, 'order should be refused with 402 Payment Required');
 });
