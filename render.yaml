@@ -8,6 +8,28 @@ services:
     envVars:
       - key: DB_PATH
         value: /data/cafe.db
+      - key: NODE_ENV
+        value: production
+      # Set these in the Render dashboard (Environment tab) — they are not stored in git.
+      # BASE_URL: your live URL, e.g. https://scanserve.onrender.com (used in reset/verify emails)
+      - key: BASE_URL
+        sync: false
+      # Razorpay live keys — enable real ₹499 subscription billing (leave unset for demo billing)
+      - key: RZP_KEY_ID
+        sync: false
+      - key: RZP_KEY_SECRET
+        sync: false
+      # SMTP — enable real password-reset & verification emails (leave unset for console demo mode)
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
     disk:
       name: data
       mountPath: /data
