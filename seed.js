@@ -1,8 +1,6 @@
 const db = require('./db');
 const auth = require('./auth');
 
-db.exec('DELETE FROM sessions; DELETE FROM order_items; DELETE FROM orders; DELETE FROM customers; DELETE FROM menu_items; DELETE FROM seats; DELETE FROM owners; DELETE FROM cafes;');
-
 const cafes = [
   { id: 'cafe_brewbean', name: 'Brew & Bean', upi: 'brewbean@upi', email: 'brew@demo.com', seats: 8,
     menu: [
@@ -19,24 +17,30 @@ const cafes = [
     ]},
 ];
 
-const insCafe = db.prepare('INSERT INTO cafes (id,name,owner_email,upi_id,loyalty_rate) VALUES (?,?,?,?,10)');
-const insOwner = db.prepare('INSERT INTO owners (cafe_id,email,pass_hash) VALUES (?,?,?)');
-const insSeat = db.prepare('INSERT INTO seats (id,cafe_id,label) VALUES (?,?,?)');
-const insItem = db.prepare('INSERT INTO menu_items (cafe_id,name,price,category,prep_mins) VALUES (?,?,?,?,?)');
-
 const PASS = 'demo1234';
 const base = 'http://localhost:3000/order.html?seat=';
-for (const c of cafes) {
-  insCafe.run(c.id, c.name, c.email, c.upi);
-  insOwner.run(c.id, c.email, auth.hashPassword(PASS));
-  console.log(`\n${c.name}  — login: ${c.email} / ${PASS}`);
-  for (let i = 1; i <= c.seats; i++) {
-    const token = `${c.id}_t${i}`;
-    insSeat.run(token, c.id, `Table ${i}`);
-    if (i <= 2) console.log(`   Table ${i} QR: ${base}${token}`);
+
+(async () => {
+  await db.init();
+  await db.exec('DELETE FROM sessions; DELETE FROM order_items; DELETE FROM orders; DELETE FROM customers; DELETE FROM menu_items; DELETE FROM seats; DELETE FROM owners; DELETE FROM cafes;');
+
+  const insCafe = db.prepare('INSERT INTO cafes (id,name,owner_email,upi_id,loyalty_rate,trial_ends) VALUES (?,?,?,?,10,datetime(\'now\',\'+14 days\'))');
+  const insOwner = db.prepare('INSERT INTO owners (cafe_id,email,pass_hash) VALUES (?,?,?)');
+  const insSeat = db.prepare('INSERT INTO seats (id,cafe_id,label) VALUES (?,?,?)');
+  const insItem = db.prepare('INSERT INTO menu_items (cafe_id,name,price,category,prep_mins) VALUES (?,?,?,?,?)');
+
+  for (const c of cafes) {
+    await insCafe.run(c.id, c.name, c.email, c.upi);
+    await insOwner.run(c.id, c.email, auth.hashPassword(PASS));
+    console.log(`\n${c.name}  — login: ${c.email} / ${PASS}`);
+    for (let i = 1; i <= c.seats; i++) {
+      const token = `${c.id}_t${i}`;
+      await insSeat.run(token, c.id, `Table ${i}`);
+      if (i <= 2) console.log(`   Table ${i} QR: ${base}${token}`);
+    }
+    for (const m of c.menu) await insItem.run(c.id, m[0], m[1], m[2], m[3]);
   }
-  for (const m of c.menu) insItem.run(c.id, m[0], m[1], m[2], m[3]);
-}
-console.log('\nSeed complete.');
-console.log('   Owner login page: http://localhost:3000/login.html');
-console.log('   Customer seat:    http://localhost:3000/order.html?seat=cafe_brewbean_t1\n');
+  console.log('\nSeed complete.');
+  console.log('   Owner login page: http://localhost:3000/login.html');
+  console.log('   Customer seat:    http://localhost:3000/order.html?seat=cafe_brewbean_t1\n');
+})().catch((e) => { console.error('Seed failed:', e.message); process.exit(1); });

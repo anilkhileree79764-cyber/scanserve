@@ -1,39 +1,58 @@
+// Database layer — libSQL/Turso.
+// In production set TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN) to use the free
+// durable cloud database. With neither set, it uses a local file (cafe.db) so
+// the app still runs offline on your computer exactly as before.
 const path = require('path');
+const { createClient } = require('@libsql/client');
 
-let DatabaseSync;
-try {
-  ({ DatabaseSync } = require('node:sqlite'));
-} catch (e) {
-  console.error('\n*** Your Node.js is too old. Please install Node.js v22 or newer from https://nodejs.org and run again. ***\n');
-  throw e;
-}
+const remoteUrl = process.env.TURSO_DATABASE_URL;
+const url = remoteUrl || ('file:' + (process.env.DB_PATH || path.join(__dirname, 'cafe.db')));
+const client = createClient(
+  process.env.TURSO_AUTH_TOKEN ? { url, authToken: process.env.TURSO_AUTH_TOKEN } : { url }
+);
 
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'cafe.db');
-const raw = new DatabaseSync(dbPath);
-try { raw.exec('PRAGMA journal_mode = WAL'); } catch { try { raw.exec('PRAGMA journal_mode = DELETE'); } catch {} }
-try { raw.exec('PRAGMA foreign_keys = ON'); } catch {}
+// libSQL wants args as an array and disallows `undefined` (must be null).
+// BigInt ids/rowids are converted back to plain numbers for the app.
+const clean = (args) => (args || []).map((v) => (v === undefined ? null : (typeof v === 'bigint' ? Number(v) : v)));
+const toResult = (r) => ({
+  changes: Number(r.rowsAffected || 0),
+  lastInsertRowid: r.lastInsertRowid != null ? Number(r.lastInsertRowid) : undefined,
+});
+
+async function exec(sql) { return client.executeMultiple(sql); }
+async function get(sql, args) { return (await client.execute({ sql, args: clean(args) })).rows[0]; }
+async function all(sql, args) { return (await client.execute({ sql, args: clean(args) })).rows; }
+async function run(sql, args) { return toResult(await client.execute({ sql, args: clean(args) })); }
 
 const db = {
-  exec: (sql) => raw.exec(sql),
-  prepare: (sql) => {
-    const st = raw.prepare(sql);
-    return {
-      get: (...a) => st.get(...a),
-      all: (...a) => st.all(...a),
-      run: (...a) => {
-        const r = st.run(...a);
-        return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
-      },
-    };
-  },
-  transaction: (fn) => (...args) => {
-    raw.exec('BEGIN');
-    try { const out = fn(...args); raw.exec('COMMIT'); return out; }
-    catch (e) { try { raw.exec('ROLLBACK'); } catch {} throw e; }
+  raw: client,
+  isRemote: !!remoteUrl,
+  exec,
+  // prepare() mirrors the old synchronous interface but returns promises,
+  // so call sites just add `await`. SQL strings are unchanged.
+  prepare: (sql) => ({
+    get: (...a) => get(sql, a),
+    all: (...a) => all(sql, a),
+    run: (...a) => run(sql, a),
+  }),
+  // Interactive write transaction. Usage:
+  //   const tx = await db.begin();
+  //   try { await tx.prepare(sql).run(...); ...; await tx.commit(); }
+  //   catch (e) { await tx.rollback(); throw e; }
+  begin: async () => {
+    const t = await client.transaction('write');
+    const wrap = (sql) => ({
+      get: (...a) => t.execute({ sql, args: clean(a) }).then((r) => r.rows[0]),
+      all: (...a) => t.execute({ sql, args: clean(a) }).then((r) => r.rows),
+      run: (...a) => t.execute({ sql, args: clean(a) }).then(toResult),
+    });
+    return { prepare: wrap, commit: () => t.commit(), rollback: () => t.rollback() };
   },
 };
 
-db.exec(`
+// Create schema + run lightweight migrations. Must be awaited before serving.
+async function init() {
+  await exec(`
 CREATE TABLE IF NOT EXISTS cafes (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_email TEXT, upi_id TEXT,
   plan TEXT DEFAULT 'free', loyalty_rate INTEGER DEFAULT 10, created_at TEXT DEFAULT (datetime('now')));
@@ -93,27 +112,29 @@ CREATE TABLE IF NOT EXISTS waiter_calls (
 CREATE INDEX IF NOT EXISTS idx_orders_cafe ON orders(cafe_id, status);
 `);
 
-// ---- Lightweight migrations: add columns if upgrading an existing DB ----
-function addColumn(table, col, def) {
-  try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch { /* already exists */ }
+  // Lightweight migrations — add columns if upgrading an existing DB.
+  const addColumn = async (table, col, def) => {
+    try { await exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch { /* already exists */ }
+  };
+  await addColumn('menu_items', 'image_url', 'TEXT');
+  await addColumn('menu_items', 'food_type', "TEXT DEFAULT 'veg'");
+  await addColumn('menu_items', 'spicy', 'INTEGER DEFAULT 0');
+  await addColumn('menu_items', 'is_combo', 'INTEGER DEFAULT 0');
+  await addColumn('menu_items', 'station', "TEXT DEFAULT 'Kitchen'");
+  await addColumn('menu_items', 'description', 'TEXT');
+  await addColumn('orders', 'notes', 'TEXT');
+  await addColumn('orders', 'priority', 'INTEGER DEFAULT 0');
+  await addColumn('order_items', 'note', 'TEXT');
+  await addColumn('cafes', 'trial_ends', 'TEXT');
+  await addColumn('cafes', 'paid_until', 'TEXT');
+  await addColumn('sessions', 'actor_kind', "TEXT DEFAULT 'owner'");
+  await addColumn('cafes', 'logo_url', 'TEXT');
+  await addColumn('cafes', 'brand_color', "TEXT DEFAULT '#b5651d'");
+  await addColumn('cafes', 'google_review_url', 'TEXT');
+  await addColumn('owners', 'email_verified', 'INTEGER DEFAULT 0');
+  await addColumn('owners', 'verify_token', 'TEXT');
+  await addColumn('customers', 'redeemed', 'INTEGER DEFAULT 0');
 }
-addColumn('menu_items', 'image_url', 'TEXT');
-addColumn('menu_items', 'food_type', "TEXT DEFAULT 'veg'");   // veg | nonveg | egg
-addColumn('menu_items', 'spicy', 'INTEGER DEFAULT 0');
-addColumn('menu_items', 'is_combo', 'INTEGER DEFAULT 0');
-addColumn('menu_items', 'station', "TEXT DEFAULT 'Kitchen'"); // Kitchen | Bar | etc.
-addColumn('menu_items', 'description', 'TEXT');
-addColumn('orders', 'notes', 'TEXT');
-addColumn('orders', 'priority', 'INTEGER DEFAULT 0');
-addColumn('order_items', 'note', 'TEXT');
-addColumn('cafes', 'trial_ends', 'TEXT');
-addColumn('cafes', 'paid_until', 'TEXT');
-addColumn('sessions', 'actor_kind', "TEXT DEFAULT 'owner'");
-addColumn('cafes', 'logo_url', 'TEXT');
-addColumn('cafes', 'brand_color', "TEXT DEFAULT '#b5651d'");
-addColumn('cafes', 'google_review_url', 'TEXT');
-addColumn('owners', 'email_verified', 'INTEGER DEFAULT 0');
-addColumn('owners', 'verify_token', 'TEXT');
-addColumn('customers', 'redeemed', 'INTEGER DEFAULT 0');
 
+db.init = init;
 module.exports = db;

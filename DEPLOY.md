@@ -1,48 +1,72 @@
-# Deploying ScanServe to Render.com
+# Deploying ScanServe — FREE and durable
 
-Your repo is deploy-ready: `render.yaml` defines a web service with a 1 GB
-persistent disk for the SQLite database. Follow these steps once.
+This setup costs **₹0 / month** and your data is **permanent** (so a cafe can
+trial it on real customers for days). It uses:
 
-## 1. Create / sign in to Render
-1. Go to **https://render.com** and click **Get Started**.
-2. Choose **Sign in with GitHub** and authorize Render for the
-   `anilkhileree79764-cyber` account. (You have to do this part yourself —
-   account creation and the GitHub authorization can't be automated.)
+- **Turso** — a free cloud database (your data lives here, never lost)
+- **Render** — a free server to run the app
 
-## 2. Create the service from this repo (Blueprint)
-1. In the Render dashboard click **New +** → **Blueprint**.
-2. Pick the repository **`anilkhileree79764-cyber/scanserve`**.
-3. Render reads `render.yaml` automatically and proposes the `scanserve`
-   web service with its disk. Click **Apply**.
-4. Confirm the plan shows **Starter ($7/mo)** — this is the one with the
-   permanent disk so cafe data is never lost.
+You'll create two free accounts. Neither needs a credit card.
 
-## 3. Set the environment variables
-In the service's **Environment** tab, add:
+---
 
-| Key | Value | Needed for |
-|-----|-------|-----------|
-| `BASE_URL` | your live URL, e.g. `https://scanserve.onrender.com` | reset/verify email links |
-| `RZP_KEY_ID` / `RZP_KEY_SECRET` | from your Razorpay dashboard | real ₹499 billing (optional — demo billing works without) |
-| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` | from your email provider | real reset/verify emails (optional — console demo mode otherwise) |
+## 1. Create the free database (Turso)
 
-`DB_PATH` and `NODE_ENV` are already set by `render.yaml` — leave them.
+1. Go to **https://turso.tech** and sign up (GitHub login is easiest).
+2. Create a database (any name, e.g. `scanserve`). Pick the region closest to
+   you (e.g. Bangalore / Mumbai).
+3. You need two values — the dashboard shows them, or use the Turso CLI:
+   - **Database URL** — looks like `libsql://scanserve-yourname.turso.io`
+   - **Auth token** — a long secret string
+   Keep these for step 3.
 
-You can deploy first with **none** of the optional ones set: billing and email
-just run in demo mode until you add the keys.
+## 2. Create the free server (Render)
 
-## 4. Deploy
-Render builds and deploys automatically. When it's live you'll get a URL like
-`https://scanserve.onrender.com`.
+1. Go to **https://render.com** → **Get Started** → **Sign in with GitHub**,
+   and authorize Render for the `anilkhileree79764-cyber` account.
+   (You have to do this part yourself — account creation and the GitHub
+   authorization can't be automated.)
+2. Click **New +** → **Blueprint** → pick the **`scanserve`** repo → **Apply**.
+   Render reads `render.yaml` and proposes the free `scanserve` web service.
 
-- Owner dashboard: `https://<your-url>/login.html`
-- Landing page with live demo: `https://<your-url>/`
+## 3. Connect them (environment variables)
+
+In the Render service's **Environment** tab, add:
+
+| Key | Value |
+|-----|-------|
+| `TURSO_DATABASE_URL` | the `libsql://...` URL from step 1 |
+| `TURSO_AUTH_TOKEN` | the auth token from step 1 |
+| `BASE_URL` | your live URL once you know it, e.g. `https://scanserve.onrender.com` |
+
+Leave the Razorpay / SMTP keys empty for now — billing and email run in demo
+mode until you add them. Click **Save** and Render redeploys.
+
+## 4. You're live
+
+You'll get a URL like `https://scanserve.onrender.com`.
+
+- Landing page + live demo: `https://<your-url>/`
+- Owner login/register: `https://<your-url>/login.html`
 - Health check: `https://<your-url>/healthz`
 
-Every future `git push` to `main` auto-deploys.
+Every `git push` to `main` auto-deploys.
 
-## 5. First-run checklist
-1. Open the URL, click **Start free** and register your cafe.
-2. Add your real menu (with photos), set your UPI ID in Settings.
-3. Add your tables, then **Print QR codes** and stick them on tables.
-4. Set `BASE_URL` (step 3) so password-reset emails point to the live site.
+### Good to know about the free tier
+- The server **sleeps after ~15 min of no visitors**, so the *first* visit after
+  idle takes ~30–50 seconds to wake up. Your **data is safe** the whole time
+  (it's in Turso, not on the server). Before showing a cafe, open the link once
+  to wake it.
+- When a cafe pays you, you can remove the cold-start by switching Render to the
+  Starter plan ($7/mo) — change `plan: free` to `plan: starter` in `render.yaml`.
+  Your data stays exactly where it is (Turso); nothing migrates.
+
+## Running on your own computer
+Still works with no setup — just double-click **START-APP.bat**. With no Turso
+variables set, it uses a local `cafe.db` file exactly as before.
+
+## First-run checklist
+1. Open the URL, click **Start free**, register your cafe.
+2. Add your real menu (upload photos), set your UPI ID in Settings.
+3. Add tables, then **Print QR codes** and stick them on tables.
+4. Set `BASE_URL` so password-reset emails point to the live site.

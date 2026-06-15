@@ -13,14 +13,14 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(check, 'hex'));
 }
 
-function createSession(owner, actorKind = 'owner') {
+async function createSession(owner, actorKind = 'owner') {
   const token = crypto.randomBytes(32).toString('hex');
-  db.prepare('INSERT INTO sessions (token, owner_id, cafe_id, actor_kind) VALUES (?,?,?,?)')
+  await db.prepare('INSERT INTO sessions (token, owner_id, cafe_id, actor_kind) VALUES (?,?,?,?)')
     .run(token, owner.id, owner.cafe_id, actorKind);
   return token;
 }
 
-function sessionFromReq(req) {
+async function sessionFromReq(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return null;
@@ -30,21 +30,23 @@ function sessionFromReq(req) {
   ).get(token);
 }
 
-function requireAuth(req, res, next) {
-  const s = sessionFromReq(req);
-  if (!s) return res.status(401).json({ error: 'Login required' });
-  const urlCafe = req.params.cafeId;
-  if (urlCafe && urlCafe !== s.cafe_id) {
-    return res.status(403).json({ error: 'Not your cafe' });
-  }
-  req.cafe_id = s.cafe_id;
-  req.owner_id = s.owner_id;
-  req.actor_kind = s.actor_kind || 'owner';
-  // Resolve the acting user's email from the correct table (owner vs staff)
-  const table = req.actor_kind === 'owner' ? 'owners' : 'staff';
-  const rec = db.prepare(`SELECT email FROM ${table} WHERE id = ? AND cafe_id = ?`).get(s.owner_id, s.cafe_id);
-  req.owner_email = rec ? rec.email : req.actor_kind;
-  next();
+async function requireAuth(req, res, next) {
+  try {
+    const s = await sessionFromReq(req);
+    if (!s) return res.status(401).json({ error: 'Login required' });
+    const urlCafe = req.params.cafeId;
+    if (urlCafe && urlCafe !== s.cafe_id) {
+      return res.status(403).json({ error: 'Not your cafe' });
+    }
+    req.cafe_id = s.cafe_id;
+    req.owner_id = s.owner_id;
+    req.actor_kind = s.actor_kind || 'owner';
+    // Resolve the acting user's email from the correct table (owner vs staff)
+    const table = req.actor_kind === 'owner' ? 'owners' : 'staff';
+    const rec = await db.prepare(`SELECT email FROM ${table} WHERE id = ? AND cafe_id = ?`).get(s.owner_id, s.cafe_id);
+    req.owner_email = rec ? rec.email : req.actor_kind;
+    next();
+  } catch (e) { next(e); }
 }
 
 // Guard: only the cafe owner (not waiter/manager staff) may perform this action
