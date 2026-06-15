@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order Receipt — ScanServe</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,sans-serif}
+  body{margin:0;background:#faf7f2;color:#2b2117;display:flex;justify-content:center;padding:20px}
+  .receipt{background:#fff;border:1px solid #ece4d8;border-radius:16px;padding:24px;width:100%;max-width:380px}
+  h1{color:#b5651d;margin:0 0 4px;font-size:22px;text-align:center}
+  .sub{text-align:center;color:#8a7f72;font-size:14px;margin-bottom:18px}
+  .divider{border:none;border-top:1px dashed #ece4d8;margin:14px 0}
+  .row{display:flex;justify-content:space-between;margin-bottom:8px;font-size:15px}
+  .row.total{font-weight:700;font-size:17px;margin-top:4px}
+  .info{font-size:13px;color:#7a6f60;margin-bottom:6px}
+  .status{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:14px}
+  .placed{background:#fff3cd;color:#856404} .preparing{background:#cfe2ff;color:#084298}
+  .ready{background:#d1e7dd;color:#0a3622} .served{background:#f8f9fa;color:#6c757d}
+  .pay-note{background:#f0e6d6;border-radius:10px;padding:12px;font-size:13px;color:#7a5a14;margin-top:14px;text-align:center}
+  button{width:100%;background:#b5651d;color:#fff;border:0;border-radius:10px;padding:12px;font-size:15px;font-weight:600;cursor:pointer;margin-top:14px}
+  @media print{button{display:none}body{background:#fff}}
+</style></head>
+<body>
+<div class="receipt" id="receipt">
+  <h1 id="cafeName">Loading...</h1>
+  <div class="sub">Order Receipt</div>
+  <div id="content"></div>
+</div>
+<script>
+const orderId = new URLSearchParams(location.search).get('order');
+if (!orderId) { document.getElementById('content').textContent = 'No order specified.'; }
+else load();
+
+async function load() {
+  const r = await fetch(`/api/order/${orderId}/receipt`);
+  if (!r.ok) { document.getElementById('content').textContent = 'Order not found.'; return; }
+  const { order: o, items, cafe } = await r.json();
+  document.getElementById('cafeName').textContent = cafe.name;
+  document.title = `Receipt #${o.id} — ${cafe.name}`;
+  const statusLabel = { placed: 'Order placed', preparing: 'Being prepared', ready: 'Ready to collect', served: 'Served' };
+  let html = `
+    <div class="info">Order #${o.id} &nbsp;·&nbsp; ${o.seat_label}</div>
+    <div class="info">${o.created_at.replace('T',' ').slice(0,16)}</div>
+    <span class="status ${o.status}">${statusLabel[o.status] || o.status}</span>
+    <hr class="divider">`;
+  const esc = s => String(s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+  for (const it of items) {
+    html += `<div class="row"><span>${it.qty}x ${esc(it.name)}</span><span>₹${(it.price * it.qty / 100).toFixed(0)}</span></div>`;
+    if (it.note) html += `<div class="info" style="margin:-4px 0 8px">↳ ${esc(it.note)}</div>`;
+  }
+  if (o.notes) html += `<div class="info">📝 ${esc(o.notes)}</div>`;
+  html += `<hr class="divider"><div class="row total"><span>Total</span><span>₹${(o.total/100).toFixed(0)}</span></div>`;
+  html += `<div class="row"><span>Payment</span><span>${o.paid ? '✅ Paid' : '⏳ Pay at counter'}</span></div>`;
+  if (!o.paid && cafe.upi_id) {
+    html += `<div class="pay-note">Pay at the counter via UPI: <b>${esc(cafe.upi_id)}</b></div>`;
+  }
+  // Google review nudge — only for happy (served) customers
+  if (cafe.google_review_url && o.status === 'served') {
+    html += `<a href="${esc(cafe.google_review_url)}" target="_blank" style="display:block;text-align:center;margin-top:14px;background:#fff3cd;color:#856404;padding:12px;border-radius:10px;text-decoration:none;font-weight:600">⭐ Loved it? Leave us a Google review!</a>`;
+  }
+  html += `<button onclick="window.print()">🖨 Print receipt</button>`;
+  document.getElementById('content').innerHTML = html;
+}
+</script>
+</body></html>

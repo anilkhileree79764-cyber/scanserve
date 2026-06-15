@@ -1,29 +1,213 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ScanServe — Cafe Ordering SaaS</title>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ScanServe — QR Ordering for Cafes</title>
 <style>
-  body{margin:0;font-family:system-ui,sans-serif;background:#faf7f2;color:#2b2117;text-align:center}
-  .hero{padding:60px 20px}.hero h1{font-size:34px;margin:0 0 8px;color:#b5651d}
-  .hero p{color:#7a6f60;max-width:520px;margin:0 auto 28px}
-  .links{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
-  a.btn{background:#b5651d;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-weight:600}
-  a.alt{background:#fff;color:#b5651d;border:1px solid #b5651d}
-  .demo{background:#fff;border:1px solid #ece4d8;max-width:520px;margin:30px auto;border-radius:12px;padding:20px;text-align:left}
-  code{background:#f0e6d6;padding:2px 6px;border-radius:5px}
-</style></head>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif}
+  body{background:#faf7f2;color:#2b2117}
+  /* NAV */
+  nav{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;background:#fff;border-bottom:1px solid #ece4d8;position:sticky;top:0;z-index:10}
+  .logo{font-size:20px;font-weight:800;color:#b5651d}
+  .nav-links{display:flex;gap:10px}
+  .nav-links a{text-decoration:none;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:600}
+  .btn-ghost{color:#b5651d;border:1px solid #b5651d}
+  .btn-solid{background:#b5651d;color:#fff}
+  /* HERO */
+  .hero{text-align:center;padding:64px 24px 48px}
+  .hero .badge{display:inline-block;background:#f0e6d6;color:#b5651d;font-size:13px;font-weight:600;padding:5px 14px;border-radius:20px;margin-bottom:16px}
+  .hero h1{font-size:42px;font-weight:800;line-height:1.15;max-width:620px;margin:0 auto 18px}
+  .hero h1 span{color:#b5651d}
+  .hero p{font-size:18px;color:#7a6f60;max-width:500px;margin:0 auto 32px;line-height:1.6}
+  .hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .hero-btns a{padding:14px 28px;border-radius:12px;font-size:16px;font-weight:700;text-decoration:none}
+  .btn-primary{background:#b5651d;color:#fff}
+  .btn-secondary{background:#fff;color:#b5651d;border:2px solid #b5651d}
+  .hero-note{margin-top:14px;font-size:13px;color:#8a7f72}
+  /* HOW IT WORKS */
+  .section{padding:56px 24px;max-width:960px;margin:0 auto}
+  .section h2{font-size:28px;font-weight:800;text-align:center;margin-bottom:8px}
+  .section .sub{text-align:center;color:#7a6f60;margin-bottom:40px;font-size:16px}
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:24px}
+  .step{background:#fff;border:1px solid #ece4d8;border-radius:16px;padding:24px;text-align:center}
+  .step .icon{font-size:36px;margin-bottom:12px}
+  .step h3{font-size:16px;font-weight:700;margin-bottom:6px}
+  .step p{font-size:14px;color:#7a6f60;line-height:1.5}
+  /* FEATURES */
+  .features{background:#fff;padding:56px 24px}
+  .features-inner{max-width:960px;margin:0 auto}
+  .features h2{font-size:28px;font-weight:800;text-align:center;margin-bottom:8px}
+  .features .sub{text-align:center;color:#7a6f60;margin-bottom:40px;font-size:16px}
+  .feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+  .feat{display:flex;gap:14px;align-items:flex-start}
+  .feat .icon{font-size:24px;min-width:40px;height:40px;background:#f0e6d6;border-radius:10px;display:flex;align-items:center;justify-content:center}
+  .feat div h4{font-size:15px;font-weight:700;margin-bottom:4px}
+  .feat div p{font-size:13px;color:#7a6f60;line-height:1.5}
+  /* PRICING */
+  .pricing{padding:56px 24px;max-width:760px;margin:0 auto;text-align:center}
+  .pricing h2{font-size:28px;font-weight:800;margin-bottom:8px}
+  .pricing .sub{color:#7a6f60;margin-bottom:40px;font-size:16px}
+  .price-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;text-align:left}
+  .price-card{background:#fff;border:1px solid #ece4d8;border-radius:16px;padding:24px}
+  .price-card.popular{border:2px solid #b5651d;position:relative}
+  .popular-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#b5651d;color:#fff;font-size:12px;font-weight:700;padding:3px 14px;border-radius:20px;white-space:nowrap}
+  .price-card h3{font-size:16px;font-weight:700;margin-bottom:4px}
+  .price-card .amount{font-size:32px;font-weight:800;color:#b5651d;margin:10px 0 4px}
+  .price-card .period{font-size:13px;color:#8a7f72;margin-bottom:16px}
+  .price-card ul{list-style:none;font-size:14px;color:#4a4035}
+  .price-card ul li{padding:5px 0;padding-left:20px;position:relative}
+  .price-card ul li::before{content:'✓';position:absolute;left:0;color:#2e9e5b;font-weight:700}
+  .price-card a{display:block;text-align:center;margin-top:20px;padding:12px;border-radius:10px;font-weight:700;text-decoration:none;background:#b5651d;color:#fff;font-size:15px}
+  .price-card.free a{background:#fff;color:#b5651d;border:2px solid #b5651d}
+  /* DEMO */
+  .demo-section{background:#1f2733;color:#fff;padding:56px 24px;text-align:center}
+  .demo-section h2{font-size:28px;font-weight:800;margin-bottom:10px}
+  .demo-section p{color:#94a3b8;margin-bottom:28px;font-size:16px}
+  .demo-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .demo-btns a{padding:13px 24px;border-radius:10px;font-size:15px;font-weight:700;text-decoration:none}
+  .demo-owner{background:#b5651d;color:#fff}
+  .demo-customer{background:transparent;border:2px solid #4a5563;color:#fff}
+  .demo-note{margin-top:14px;font-size:13px;color:#64748b}
+  /* FOOTER */
+  footer{text-align:center;padding:24px;font-size:13px;color:#8a7f72;border-top:1px solid #ece4d8}
+  @media(max-width:600px){.hero h1{font-size:28px}.hero p{font-size:16px}}
+</style>
+</head>
 <body>
-<div class="hero">
-  <h1>ScanServe</h1>
-  <p>One scan to order and earn rewards — for any cafe. Multi-tenant: every cafe runs on the same system with separate data.</p>
-  <div class="links">
-    <a class="btn" href="/login.html">Owner Login / Dashboard &rarr;</a>
-    <a class="btn alt" href="/order.html?seat=cafe_brewbean_t1">Try a Customer Seat &rarr;</a>
+
+<nav>
+  <div class="logo">ScanServe</div>
+  <div class="nav-links">
+    <a class="btn-ghost" href="/login.html">Login</a>
+    <a class="btn-solid" href="/login.html#register">Start free</a>
   </div>
-  <div class="demo">
-    <b>Demo flow:</b><br>
-    1. Open a <code>Customer Seat</code> (this is what a QR opens).<br>
-    2. Add items, enter a phone number, place the order.<br>
-    3. Open the <code>Dashboard</code> (login brew@demo.com / demo1234) &rarr; watch the order appear live, advance it through the kitchen, edit the menu, see loyalty and win-back.
+</nav>
+
+<div class="hero">
+  <div class="badge">Made for Indian cafes</div>
+  <h1>Your customers scan, order & pay — <span>you just serve</span></h1>
+  <p>No app download. No hardware. Just a QR code on each table. Customers order from their phone in 30 seconds.</p>
+  <div class="hero-btns">
+    <a class="btn-primary" href="/login.html#register">Start free trial &rarr;</a>
+    <a class="btn-secondary" href="/order.html?seat=cafe_brewbean_t1">See customer view</a>
+  </div>
+  <div class="hero-note">Free to start &nbsp;·&nbsp; No credit card &nbsp;·&nbsp; Setup in 10 minutes</div>
+</div>
+
+<div class="section">
+  <h2>How it works</h2>
+  <p class="sub">Three steps — from zero to taking orders</p>
+  <div class="steps">
+    <div class="step">
+      <div class="icon">📋</div>
+      <h3>1. Add your menu</h3>
+      <p>Log in, add your items with prices and prep times. Takes 5 minutes.</p>
+    </div>
+    <div class="step">
+      <div class="icon">🖨️</div>
+      <h3>2. Print QR codes</h3>
+      <p>Print one QR sticker per table from the dashboard. Stick it on the table.</p>
+    </div>
+    <div class="step">
+      <div class="icon">📱</div>
+      <h3>3. Customers order</h3>
+      <p>Customer scans QR → menu opens → order placed → you see it on your dashboard instantly.</p>
+    </div>
+    <div class="step">
+      <div class="icon">💰</div>
+      <h3>4. Collect payment</h3>
+      <p>Customer pays at counter with cash or your UPI. No payment gateway fees.</p>
+    </div>
   </div>
 </div>
-</body></html>
+
+<div class="features">
+  <div class="features-inner">
+    <h2>Everything a cafe needs</h2>
+    <p class="sub">Built specifically for small Indian cafes</p>
+    <div class="feat-grid">
+      <div class="feat"><div class="icon">⚡</div><div><h4>Live orders dashboard</h4><p>See every order the moment it's placed. Advance it from placed → preparing → ready with one tap.</p></div></div>
+      <div class="feat"><div class="icon">👨‍🍳</div><div><h4>Kitchen display</h4><p>Separate simplified view for your cook. Big text, easy to read even in a busy kitchen.</p></div></div>
+      <div class="feat"><div class="icon">🎁</div><div><h4>Loyalty points</h4><p>Customers earn points on every order automatically. Keeps them coming back.</p></div></div>
+      <div class="feat"><div class="icon">📊</div><div><h4>Order history & export</h4><p>See all past orders, revenue by date range. Download as Excel/CSV for your accountant.</p></div></div>
+      <div class="feat"><div class="icon">📲</div><div><h4>Win-back SMS</h4><p>Automatically find customers who haven't visited in 30+ days and send them an offer.</p></div></div>
+      <div class="feat"><div class="icon">🪑</div><div><h4>Table management</h4><p>Add or remove tables anytime. Each gets its own QR code automatically.</p></div></div>
+      <div class="feat"><div class="icon">🔔</div><div><h4>Order alert sound</h4><p>Dashboard plays a sound when a new order arrives — no more missed orders.</p></div></div>
+      <div class="feat"><div class="icon">🧾</div><div><h4>Digital receipts</h4><p>Customers get a printable receipt after ordering. Professional and paperless.</p></div></div>
+      <div class="feat"><div class="icon">🔒</div><div><h4>Secure & private</h4><p>Each cafe's data is completely separate. Bank-grade password hashing. HTTPS enforced.</p></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="pricing">
+  <h2>Simple pricing</h2>
+  <p class="sub">Start free. Pay only when you're happy.</p>
+  <div class="price-cards">
+    <div class="price-card free">
+      <h3>Free Trial</h3>
+      <div class="amount">₹0</div>
+      <div class="period">for 30 days</div>
+      <ul>
+        <li>Unlimited orders</li>
+        <li>All features included</li>
+        <li>Up to 10 tables</li>
+        <li>Email support</li>
+      </ul>
+      <a href="/login.html#register">Start free trial</a>
+    </div>
+    <div class="price-card popular">
+      <div class="popular-badge">Most popular</div>
+      <h3>Standard</h3>
+      <div class="amount">₹499</div>
+      <div class="period">per month</div>
+      <ul>
+        <li>Unlimited orders</li>
+        <li>All features included</li>
+        <li>Unlimited tables</li>
+        <li>Priority support</li>
+        <li>CSV export</li>
+        <li>Win-back SMS</li>
+      </ul>
+      <a href="/login.html#register">Get started</a>
+    </div>
+  </div>
+  <p style="margin-top:20px;font-size:13px;color:#8a7f72">No setup fee. Cancel anytime. Your data is always yours.</p>
+</div>
+
+<div class="demo-section">
+  <h2>Try it right now</h2>
+  <p>See exactly what your customers and you will see — no signup needed.</p>
+  <div class="demo-btns">
+    <a class="demo-owner" href="#" id="demoBtn" onclick="launchDemo(event)">Try the owner dashboard &rarr;</a>
+    <a class="demo-customer" href="#" id="demoCust" style="opacity:.5;pointer-events:none">Customer ordering view</a>
+  </div>
+  <div class="demo-note" id="demoNote">A fully working demo cafe is created instantly — no signup, pre-loaded with sample orders.</div>
+</div>
+<script>
+async function launchDemo(e){
+  e.preventDefault();
+  const btn=document.getElementById('demoBtn'); btn.textContent='Setting up your demo…';
+  try{
+    const r=await fetch('/api/demo',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await r.json();
+    if(!d.ok){ btn.textContent='Try again'; return; }
+    localStorage.setItem('ss_token',d.token);
+    localStorage.setItem('ss_cafe',d.cafe_id);
+    localStorage.setItem('ss_name',d.cafe_name);
+    localStorage.setItem('ss_tour_done','1'); // skip tour in demo
+    // wire the customer view to a real table from this demo cafe
+    const seats=await fetch('/api/cafe/'+d.cafe_id+'/seats',{headers:{Authorization:'Bearer '+d.token}}).then(x=>x.json());
+    if(seats[0]){ const c=document.getElementById('demoCust'); c.href='/order.html?seat='+seats[0].id; c.style.opacity=1; c.style.pointerEvents='auto'; c.setAttribute('target','_blank'); }
+    location.href='/dashboard.html';
+  }catch(err){ btn.textContent='Try again'; }
+}
+</script>
+
+<footer>
+  &copy; 2026 ScanServe &nbsp;·&nbsp; Built for Indian cafes &nbsp;·&nbsp;
+  <a href="/login.html" style="color:#b5651d">Owner login</a>
+</footer>
+
+</body>
+</html>

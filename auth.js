@@ -13,10 +13,10 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(check, 'hex'));
 }
 
-function createSession(owner) {
+function createSession(owner, actorKind = 'owner') {
   const token = crypto.randomBytes(32).toString('hex');
-  db.prepare('INSERT INTO sessions (token, owner_id, cafe_id) VALUES (?,?,?)')
-    .run(token, owner.id, owner.cafe_id);
+  db.prepare('INSERT INTO sessions (token, owner_id, cafe_id, actor_kind) VALUES (?,?,?,?)')
+    .run(token, owner.id, owner.cafe_id, actorKind);
   return token;
 }
 
@@ -38,7 +38,19 @@ function requireAuth(req, res, next) {
     return res.status(403).json({ error: 'Not your cafe' });
   }
   req.cafe_id = s.cafe_id;
+  req.owner_id = s.owner_id;
+  req.actor_kind = s.actor_kind || 'owner';
+  // Resolve the acting user's email from the correct table (owner vs staff)
+  const table = req.actor_kind === 'owner' ? 'owners' : 'staff';
+  const rec = db.prepare(`SELECT email FROM ${table} WHERE id = ? AND cafe_id = ?`).get(s.owner_id, s.cafe_id);
+  req.owner_email = rec ? rec.email : req.actor_kind;
   next();
 }
 
-module.exports = { hashPassword, verifyPassword, createSession, sessionFromReq, requireAuth };
+// Guard: only the cafe owner (not waiter/manager staff) may perform this action
+function requireOwner(req, res, next) {
+  if (req.actor_kind !== 'owner') return res.status(403).json({ error: 'Only the cafe owner can do this.' });
+  next();
+}
+
+module.exports = { hashPassword, verifyPassword, createSession, sessionFromReq, requireAuth, requireOwner };

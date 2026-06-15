@@ -23,6 +23,7 @@
     <input id="lPass" type="password" placeholder="Password" autocomplete="current-password">
     <button onclick="login()">Log in</button>
     <div class="toggle" onclick="show('register')">New cafe? Create an account &rarr;</div>
+    <div style="text-align:center;margin-top:10px;font-size:13px"><a href="/forgot-password.html" style="color:#b5651d">Forgot password?</a></div>
   </div>
 
   <div id="registerForm" class="hide">
@@ -41,7 +42,7 @@ function show(which){
   document.getElementById('sub').textContent = which==='login' ? 'Owner login' : 'Register your cafe';
   document.getElementById('err').textContent='';
 }
-function save(d){ localStorage.setItem('ss_token', d.token); localStorage.setItem('ss_cafe', d.cafe_id); localStorage.setItem('ss_name', d.cafe_name); location.href='/dashboard.html'; }
+function save(d){ localStorage.setItem('ss_token', d.token); localStorage.setItem('ss_cafe', d.cafe_id); localStorage.setItem('ss_name', d.cafe_name); location.href = d.is_new ? '/welcome.html' : '/dashboard.html'; }
 async function login(){
   const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({email:document.getElementById('lEmail').value,password:document.getElementById('lPass').value})});

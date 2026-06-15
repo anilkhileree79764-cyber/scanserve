@@ -7,21 +7,34 @@ A complete, ready-to-sell web app that lets cafe customers **scan a QR code on t
 ## What it does
 
 **For the customer (scans QR → orders in 30 seconds)**
-- Scans QR code on table → menu loads instantly on their phone
-- Adds items to cart, enters phone number, places order
+- Scans QR code on table → menu loads instantly on their phone (with photos, veg/non-veg marks, spice level, bestseller tags)
+- Searches the menu, adds items to cart with per-item notes (e.g. "no onion")
+- "My usual" — repeat a previous order by phone number in one tap
+- Enters phone number, places order; cart auto-saves and survives a dropped connection
 - Sees a live countdown timer ("Your order is ready in 4 mins")
-- Rates the experience after being served
+- Can call the waiter from their phone (water, bill, cutlery)
+- Rates the experience after being served; happy customers are nudged to leave a Google review
 - Earns loyalty points on every visit
 
 **For the cafe owner (dashboard)**
-- Live orders board — see every order as it comes in
-- Kitchen display — simplified view for the cook
-- Menu editor — add/edit/delete items, toggle sold-out instantly
+- Live orders board — see every order as it comes in, with sound + desktop alerts
+- Overdue alerts — orders that sit too long turn red and pulse; mark any order "rush"
+- Kitchen display — big-text, dark-mode view for the cook, filterable by station (Kitchen / Bar)
+- Menu editor — add/edit/delete items with photos, veg/non-veg, spice level, station; toggle sold-out instantly
 - Sold-out items reset automatically every day at midnight
-- Customer list with loyalty points and visit history
+- Reports — daily closing report (cash vs UPI, profit = revenue − expenses), revenue chart, best/worst sellers, busiest-hours heatmap
+- Expense tracking — log costs to see real daily profit
+- Staff logins — add waiter/manager accounts (owner controls them)
+- Customer list with loyalty points, visit history, and one-tap points redemption
 - Win-back campaign — SMS/WhatsApp offer to customers inactive 30+ days
-- Order history with date filter and CSV export
-- Cafe settings — update name, UPI ID, loyalty rate anytime
+- Order history with date filter and CSV export; full data backup (JSON) anytime
+- Cafe settings — name, UPI ID, loyalty rate, logo, brand colour, Google review link
+- 14-day free trial that **actually locks** online ordering when it lapses (the paywall)
+- Real subscription billing — ₹499/month via Razorpay (demo mode without keys); renew extends 30 days
+- Upload menu photos straight from your phone (no image-host URL needed)
+- Instant demo sandbox from the landing page (auto-cleaned daily)
+- Onboarding tour for first-time owners; account deletion (delete all data)
+- Email verification, automated daily DB backups, /healthz uptime endpoint
 - Printable QR code sheet — one per table, print and stick
 
 **Business model**

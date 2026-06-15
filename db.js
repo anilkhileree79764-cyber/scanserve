@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY, owner_id INTEGER NOT NULL, cafe_id TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')));
 
+CREATE TABLE IF NOT EXISTS password_resets (
+  token TEXT PRIMARY KEY, owner_id INTEGER NOT NULL, email TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')));
+
 CREATE TABLE IF NOT EXISTS seats (
   id TEXT PRIMARY KEY, cafe_id TEXT NOT NULL, label TEXT NOT NULL);
 
@@ -61,14 +65,55 @@ CREATE TABLE IF NOT EXISTS customers (
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY AUTOINCREMENT, cafe_id TEXT NOT NULL, seat_id TEXT, seat_label TEXT,
   customer_id INTEGER, status TEXT DEFAULT 'placed', total INTEGER NOT NULL, pay_method TEXT DEFAULT 'upi',
-  paid INTEGER DEFAULT 0, eta_mins INTEGER DEFAULT 10, rating INTEGER, feedback TEXT,
+  paid INTEGER DEFAULT 0, eta_mins INTEGER DEFAULT 10, rating INTEGER, feedback TEXT, notes TEXT,
   rzp_order_id TEXT, rzp_payment_id TEXT, created_at TEXT DEFAULT (datetime('now')));
 
 CREATE TABLE IF NOT EXISTS order_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL, item_id INTEGER NOT NULL,
   name TEXT NOT NULL, price INTEGER NOT NULL, qty INTEGER NOT NULL);
 
+CREATE TABLE IF NOT EXISTS staff (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, cafe_id TEXT NOT NULL, name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL, pass_hash TEXT NOT NULL, role TEXT DEFAULT 'waiter',
+  created_at TEXT DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS expenses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, cafe_id TEXT NOT NULL, label TEXT NOT NULL,
+  amount INTEGER NOT NULL, category TEXT DEFAULT 'General', spent_on TEXT DEFAULT (date('now')),
+  created_at TEXT DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, cafe_id TEXT NOT NULL, actor TEXT, action TEXT NOT NULL,
+  detail TEXT, created_at TEXT DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS waiter_calls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, cafe_id TEXT NOT NULL, seat_id TEXT, seat_label TEXT,
+  reason TEXT, resolved INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')));
+
 CREATE INDEX IF NOT EXISTS idx_orders_cafe ON orders(cafe_id, status);
 `);
+
+// ---- Lightweight migrations: add columns if upgrading an existing DB ----
+function addColumn(table, col, def) {
+  try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch { /* already exists */ }
+}
+addColumn('menu_items', 'image_url', 'TEXT');
+addColumn('menu_items', 'food_type', "TEXT DEFAULT 'veg'");   // veg | nonveg | egg
+addColumn('menu_items', 'spicy', 'INTEGER DEFAULT 0');
+addColumn('menu_items', 'is_combo', 'INTEGER DEFAULT 0');
+addColumn('menu_items', 'station', "TEXT DEFAULT 'Kitchen'"); // Kitchen | Bar | etc.
+addColumn('menu_items', 'description', 'TEXT');
+addColumn('orders', 'notes', 'TEXT');
+addColumn('orders', 'priority', 'INTEGER DEFAULT 0');
+addColumn('order_items', 'note', 'TEXT');
+addColumn('cafes', 'trial_ends', 'TEXT');
+addColumn('cafes', 'paid_until', 'TEXT');
+addColumn('sessions', 'actor_kind', "TEXT DEFAULT 'owner'");
+addColumn('cafes', 'logo_url', 'TEXT');
+addColumn('cafes', 'brand_color', "TEXT DEFAULT '#b5651d'");
+addColumn('cafes', 'google_review_url', 'TEXT');
+addColumn('owners', 'email_verified', 'INTEGER DEFAULT 0');
+addColumn('owners', 'verify_token', 'TEXT');
+addColumn('customers', 'redeemed', 'INTEGER DEFAULT 0');
 
 module.exports = db;

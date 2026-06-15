@@ -1,5 +1,7 @@
 node_modules/
 cafe.db
 cafe.db-*
+backups/
+public/uploads/
 *.log
 .DS_Store
