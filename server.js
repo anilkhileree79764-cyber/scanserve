@@ -449,6 +449,15 @@ app.post('/api/order/:id/paid', auth.requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Cancel an order (kept in history as 'cancelled', removed from the live queue)
+app.post('/api/order/:id/cancel', auth.requireAuth, wrap(async (req, res) => {
+  const o = await db.prepare('SELECT cafe_id, status FROM orders WHERE id = ?').get(req.params.id);
+  if (!o || o.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not your order' });
+  await db.prepare("UPDATE orders SET status='cancelled' WHERE id=?").run(req.params.id);
+  audit(req.cafe_id, req.owner_email, 'order.cancel', String(req.params.id));
+  res.json({ ok: true });
+}));
+
 app.get('/api/cafe/:cafeId/menu', auth.requireAuth, wrap(async (req, res) => {
   res.json(await db.prepare('SELECT * FROM menu_items WHERE cafe_id = ? ORDER BY category,name').all(req.params.cafeId));
 }));

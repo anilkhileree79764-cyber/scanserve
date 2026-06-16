@@ -63,6 +63,7 @@
   .badge-preparing{background:#cfe2ff;color:#084298}
   .badge-ready{background:#d1e7dd;color:#0a3622}
   .badge-served{background:#f8f9fa;color:#6c757d}
+  .badge-cancelled{background:#fde8e6;color:#c0392b}
   /* banners */
   .banner{padding:10px 20px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
   .banner.trial{background:#fff3cd;color:#856404}
@@ -76,6 +77,7 @@
   .stationtag{background:#eef1f5;color:#555;font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;margin-left:4px}
   .overdue-time{color:#e74c3c;font-weight:700}
   .rushbtn{background:#fde8e6;color:#c0392b;border:0;border-radius:8px;padding:8px;font-size:13px;cursor:pointer}
+  .cancelbtn{background:#f1f3f5;color:#c0392b;border:1px solid #f5c6c0;border-radius:8px;padding:8px;font-size:13px;cursor:pointer}
   /* reports */
   .chart{display:flex;align-items:flex-end;gap:6px;height:160px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
   .bar-col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;height:100%}
@@ -192,7 +194,7 @@
     </div>
     <div id="historyStats" style="margin-bottom:14px"></div>
     <table id="historyTable">
-      <thead><tr><th>#</th><th>Date & Time</th><th>Seat</th><th>Items</th><th>Total</th><th>Status</th><th>Rating</th></tr></thead>
+      <thead><tr><th>#</th><th>Date & Time</th><th>Seat</th><th>Items</th><th>Total</th><th>Status</th><th>Rating &amp; comment</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -526,7 +528,7 @@ async function pollOrderAlert() {
 async function drawOrders() {
   const r = await api(`/api/cafe/${CAFE}/orders`);
   if (!r) return;
-  const orders = await r.json();
+  const orders = (await r.json()).filter(o => o.status !== 'cancelled');
   const grid = document.getElementById('ordersGrid');
   grid.innerHTML = '';
   if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">No orders yet. Share your QR codes with customers!</p>'; return; }
@@ -580,11 +582,22 @@ async function drawOrders() {
       const pb = document.createElement('button'); pb.textContent = 'Mark paid';
       pb.onclick = () => markPaid(x.id); act.appendChild(pb);
     }
+    if (['placed','preparing','ready'].includes(x.status)) {
+      const cb = document.createElement('button'); cb.className = 'cancelbtn'; cb.textContent = '✕ Cancel';
+      cb.onclick = () => cancelOrder(x.id);
+      act.appendChild(cb);
+    }
     elems.push(act);
     card.append(...elems);
     grid.appendChild(card);
   }
   filterOrders();
+}
+
+async function cancelOrder(id) {
+  if (!confirm('Cancel order #' + id + '? It will move to History as cancelled.')) return;
+  await api(`/api/order/${id}/cancel`, { method: 'POST' });
+  refresh();
 }
 
 async function setPriority(id, v) {
@@ -840,19 +853,23 @@ async function loadHistory() {
   for (const o of orders) {
     const tr = document.createElement('tr');
     const statusClass = `badge-status badge-${o.status}`;
-    const ratingStars = o.rating ? '⭐'.repeat(o.rating) : '—';
     const cells = [
       o.id,
       o.created_at.replace('T', ' ').slice(0, 16),
       o.seat_label,
       o.items_summary || '—',
       money(o.total) + (o.paid ? ' ✓' : ''),
-      null,
-      ratingStars
+      null,  // status (idx 5)
+      null,  // rating + comment (idx 6)
     ];
     cells.forEach((c, i) => {
       const td = document.createElement('td');
       if (i === 5) { td.innerHTML = `<span class="${statusClass}">${esc(o.status)}</span>`; }
+      else if (i === 6) {
+        const stars = o.rating ? '<span class="stars">' + '★'.repeat(o.rating) + '</span>' : '<span style="color:#bbb">—</span>';
+        const comment = o.feedback ? `<div style="font-size:12px;color:#555;margin-top:2px">“${esc(o.feedback)}”</div>` : '';
+        td.innerHTML = stars + comment;
+      }
       else td.textContent = c;
       tr.appendChild(td);
     });
@@ -1143,18 +1160,24 @@ async function loadWaiterCalls() {
   const r = await api(`/api/cafe/${CAFE}/waiter-calls`); if (!r) return;
   const calls = await r.json();
   const banner = document.getElementById('waiterBanner');
-  if (!calls.length) { banner.classList.add('hide'); lastWaiterCount = 0; return; }
+  if (!calls.length) { banner.classList.add('hide'); banner.innerHTML = ''; lastWaiterCount = 0; return; }
   if (calls.length > lastWaiterCount) playBeep();
   lastWaiterCount = calls.length;
   banner.classList.remove('hide');
   banner.innerHTML = '';
   const txt = document.createElement('span');
-  txt.textContent = `🛎️ ${calls.length} table${calls.length>1?'s':''} need attention: ` + calls.map(c => `${c.seat_label} (${c.reason})`).join(', ');
+  txt.textContent = `🛎️ ${calls.length} table${calls.length > 1 ? 's' : ''} calling — tap to dismiss:`;
   banner.appendChild(txt);
-  const wrap = document.createElement('span');
+  const wrap = document.createElement('span'); wrap.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
   for (const c of calls) {
-    const b = document.createElement('button'); b.textContent = `✓ ${c.seat_label}`;
-    b.onclick = async () => { await api(`/api/waiter-calls/${c.id}/resolve`, { method: 'POST' }); loadWaiterCalls(); };
+    const b = document.createElement('button');
+    b.textContent = `${c.seat_label} (${c.reason}) — Done ✓`;
+    b.onclick = async () => {
+      b.remove();                                   // disappears instantly
+      lastWaiterCount = Math.max(0, lastWaiterCount - 1);
+      if (!wrap.querySelector('button')) banner.classList.add('hide');
+      await api(`/api/waiter-calls/${c.id}/resolve`, { method: 'POST' });
+    };
     wrap.appendChild(b);
   }
   banner.appendChild(wrap);

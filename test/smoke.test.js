@@ -88,6 +88,15 @@ test('placing an order works while in trial, with item notes', async () => {
   assert.ok(orders[0].stations.length >= 1);
 });
 
+test('owner can cancel an order', async () => {
+  const ord = await (await post('/api/order', { cafe_id: S.cafe, seat_id: S.seat, phone: '9876543211', items: [{ id: S.item, qty: 1 }] })).json();
+  const c = await post(`/api/order/${ord.orderId}/cancel`, {}, S.token);
+  assert.equal(c.status, 200);
+  const orders = await (await get(`/api/cafe/${S.cafe}/orders`, S.token)).json();
+  const found = orders.find(o => o.id === ord.orderId);
+  assert.equal(found.status, 'cancelled');
+});
+
 test('report computes profit = revenue - expenses', async () => {
   await post(`/api/cafe/${S.cafe}/expenses`, { label: 'Milk', amount: 5000 }, S.token);
   const rep = await (await get(`/api/cafe/${S.cafe}/report`, S.token)).json();
