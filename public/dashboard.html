@@ -15,7 +15,12 @@
   header a,header button{background:#b5651d;color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;text-decoration:none}
   header .ghost{background:transparent;border:1px solid #4a5563}
   .tabs{display:flex;gap:6px;padding:10px 20px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
-  .tab{padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:14px}
+  .tab{padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:14px;position:relative}
+  .tbadge{display:none;background:#e74c3c;color:#fff;font-size:11px;font-weight:800;border-radius:10px;padding:1px 7px;margin-left:4px}
+  .tab.has-new .tbadge{display:inline-block}
+  .tab.flash{animation:tabflash 1.1s ease-in-out infinite;border-color:#e74c3c!important}
+  @keyframes tabflash{0%,100%{background:#fff;color:var(--ink)}50%{background:#e74c3c;color:#fff}}
+  .tab.on.flash{animation:none;background:var(--accent);color:#fff}
   .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .stats{display:flex;gap:12px;padding:16px 20px;flex-wrap:wrap}
   .stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 18px;flex:1;min-width:120px}
@@ -115,7 +120,7 @@
 <div class="banner waiter hide" id="waiterBanner"></div>
 
 <div class="tabs">
-  <div class="tab on" data-t="orders">Live Orders</div>
+  <div class="tab on" data-t="orders">Live Orders<span class="tbadge" id="ordersBadge">0</span></div>
   <div class="tab" data-t="kitchen">Kitchen 🌙</div>
   <div class="tab" data-t="menu">Menu</div>
   <div class="tab" data-t="reports">Reports 📊</div>
@@ -148,6 +153,13 @@
   <div id="menu" class="pane hide">
     <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
       <span>Add, edit prices, or toggle sold-out here. Sold-out items reset automatically every day at midnight.</span>
+    </div>
+    <div style="background:#fff;border:1px dashed #b5651d;border-radius:12px;padding:14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <b>📷 Scan your paper menu</b>
+        <div style="font-size:13px;color:var(--muted)">Take a photo of your menu card — we'll read the items &amp; prices and add them for you.</div>
+      </div>
+      <label class="addbtn" style="cursor:pointer">📷 Scan menu photo<input id="scanFile" type="file" accept="image/*" style="display:none" onchange="scanMenu(this)"></label>
     </div>
     <div class="additem">
       <input id="niName" placeholder="Item name" maxlength="100">
@@ -416,8 +428,11 @@ function init() {
   applyDark();
   loadTrial();
   refresh();
-  // Auto-refresh every 10s; play sound if new orders arrived
+  pollOrderAlert();
+  // Auto-refresh every 10s. The order watcher runs EVERY time regardless of tab,
+  // so a new order lights up the Live Orders tab from anywhere.
   setInterval(() => {
+    pollOrderAlert();
     const which = document.querySelector('.tab.on').dataset.t;
     if (!['menu', 'settings', 'history', 'reports', 'expenses', 'staff'].includes(which)) refresh();
     else loadWaiterCalls();
@@ -436,6 +451,7 @@ function filterOrders() {
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
   t.classList.add('on');
+  t.classList.remove('flash');           // stop the red flash once you look
   document.querySelectorAll('.pane').forEach(p => p.classList.add('hide'));
   document.getElementById(t.dataset.t).classList.remove('hide');
   refresh();
@@ -443,20 +459,24 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
 
 async function refresh() {
   const which = document.querySelector('.tab.on').dataset.t;
-  const sr = await api(`/api/cafe/${CAFE}/stats`);
-  if (!sr) return;
-  const s = await sr.json();
-  const stars = s.avg_rating ? '⭐'.repeat(Math.round(s.avg_rating)) + ` ${s.avg_rating}` : '—';
-  document.getElementById('stats').innerHTML =
-    `<div class="stat"><b>${s.orders_today}</b><span>Orders today</span></div>
-     <div class="stat"><b>${money(s.revenue_today)}</b><span>Revenue today</span></div>
-     <div class="stat"><b>${money(s.revenue_week)}</b><span>This week</span></div>
-     <div class="stat"><b>${s.active_orders}</b><span>Active now</span></div>
-     <div class="stat"><b>${stars}</b><span>Avg rating</span></div>`;
-
+  // Draw the active pane FIRST and independently — a slow/failed stats call
+  // must never leave the pane (e.g. the menu) blank.
   const fns = { orders: drawOrders, kitchen: drawKitchen, menu: drawMenu, reports: drawReports, history: loadHistory, customers: drawCustomers, winback: drawWinback, expenses: drawExpenses, staff: drawStaff, tables: drawTables, settings: loadSettings };
-  if (fns[which]) fns[which]();
+  if (fns[which]) { try { await fns[which](); } catch (e) { console.error('pane draw failed:', e); } }
   loadWaiterCalls();
+  // Stats are best-effort.
+  try {
+    const sr = await api(`/api/cafe/${CAFE}/stats`);
+    if (!sr) return;
+    const s = await sr.json();
+    const stars = s.avg_rating ? '⭐'.repeat(Math.round(s.avg_rating)) + ` ${s.avg_rating}` : '—';
+    document.getElementById('stats').innerHTML =
+      `<div class="stat"><b>${s.orders_today}</b><span>Orders today</span></div>
+       <div class="stat"><b>${money(s.revenue_today)}</b><span>Revenue today</span></div>
+       <div class="stat"><b>${money(s.revenue_week)}</b><span>This week</span></div>
+       <div class="stat"><b>${s.active_orders}</b><span>Active now</span></div>
+       <div class="stat"><b>${stars}</b><span>Avg rating</span></div>`;
+  } catch (e) { /* keep last stats */ }
 }
 
 const NEXT = { placed: 'preparing', preparing: 'ready', ready: 'served' };
@@ -470,25 +490,44 @@ function isOverdue(o) {
   return ['placed', 'preparing'].includes(o.status) && elapsedMins(o) > (o.eta_mins || 10);
 }
 
+// Global new-order watcher — runs every cycle no matter which tab is open,
+// so the Live Orders tab lights up red + beeps even from the Menu/Reports tab.
+let alertSeenIds = new Set();
+let alertReady = false;
+function setOrdersBadge(n) {
+  const badge = document.getElementById('ordersBadge');
+  const tab = document.querySelector('.tab[data-t="orders"]');
+  if (badge) badge.textContent = n;
+  if (tab) tab.classList.toggle('has-new', n > 0);
+}
+async function pollOrderAlert() {
+  try {
+    const r = await api(`/api/cafe/${CAFE}/orders?limit=200`);
+    if (!r) return;
+    const orders = await r.json();
+    const placed = orders.filter(o => o.status === 'placed');
+    setOrdersBadge(placed.length);
+    if (alertReady) {
+      for (const o of placed) {
+        if (!alertSeenIds.has(o.id)) {            // a brand-new order just arrived
+          playBeep(); notifyNewOrder(o);
+          const onOrders = document.querySelector('.tab.on').dataset.t === 'orders';
+          if (!onOrders) document.querySelector('.tab[data-t="orders"]').classList.add('flash');
+          else refresh();                          // already viewing → just refresh the list
+          break;
+        }
+      }
+    }
+    alertSeenIds = new Set(placed.map(o => o.id));
+    alertReady = true;
+  } catch (e) {}
+}
+
 async function drawOrders() {
   const r = await api(`/api/cafe/${CAFE}/orders`);
   if (!r) return;
   const orders = await r.json();
   const grid = document.getElementById('ordersGrid');
-
-  // Detect new orders → sound + desktop notification
-  const newIds = new Set(orders.filter(o => o.status === 'placed').map(o => o.id));
-  if (lastOrderIds.size > 0) {
-    for (const o of orders) {
-      if (o.status === 'placed' && !lastOrderIds.has(o.id)) {
-        playBeep();
-        notifyNewOrder(o);
-        break;
-      }
-    }
-  }
-  lastOrderIds = newIds;
-
   grid.innerHTML = '';
   if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">No orders yet. Share your QR codes with customers!</p>'; return; }
   // priority + overdue first
@@ -711,6 +750,65 @@ async function addItem() {
   document.getElementById('niCombo').checked = false;
   drawMenu();
 }
+
+// ===== AI: scan a photo of the paper menu and add the items =====
+let scannedItems = [];
+async function scanMenu(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { alert('Photo is too large (max 5 MB). Try a smaller photo.'); input.value=''; return; }
+  showScanModal('<h2>Reading your menu… 🔎</h2><p>This takes a few seconds. Please wait.</p>');
+  const dataUrl = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
+  input.value = '';
+  const r = await api(`/api/cafe/${CAFE}/menu/scan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: dataUrl }) });
+  if (!r) { closeScan(); return; }
+  const d = await r.json();
+  if (!r.ok) {
+    showScanModal(`<h2>Couldn't scan it</h2><p>${esc(d.error || 'Try again.')}</p>${d.not_enabled ? '<p style="font-size:13px;color:#888">(The owner needs to enable AI scanning.)</p>' : ''}<button onclick="closeScan()" class="addbtn" style="margin-top:8px">OK</button>`);
+    return;
+  }
+  scannedItems = d.items || [];
+  if (!scannedItems.length) { showScanModal('<h2>No items found</h2><p>Try a clearer, well-lit photo of the menu.</p><button onclick="closeScan()" class="addbtn" style="margin-top:8px">OK</button>'); return; }
+  renderScanReview();
+}
+
+function renderScanReview() {
+  const TE = { veg: '🟢', nonveg: '🔴', egg: '🟡' };
+  let rows = scannedItems.map((i, idx) => `
+    <tr>
+      <td style="padding:4px"><input type="checkbox" checked data-i="${idx}" class="scanChk"></td>
+      <td style="padding:4px">${TE[i.food_type] || '🟢'} ${esc(i.name)}</td>
+      <td style="padding:4px">₹${i.price}</td>
+      <td style="padding:4px;color:#888">${esc(i.category)}</td>
+    </tr>`).join('');
+  showScanModal(`
+    <h2 style="margin-bottom:2px">Found ${scannedItems.length} items</h2>
+    <p style="margin:0 0 10px;font-size:13px;color:#888">Untick anything you don't want, then add them all. You can fix prices later in the menu.</p>
+    <div style="max-height:320px;overflow:auto;text-align:left;border:1px solid var(--line);border-radius:8px">
+      <table style="width:100%;font-size:14px"><tbody>${rows}</tbody></table>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button onclick="addScanned()" class="addbtn" style="flex:1">✓ Add selected items</button>
+      <button onclick="closeScan()" class="tour-skip" style="width:auto">Cancel</button>
+    </div>`, true);
+}
+
+async function addScanned() {
+  const chosen = [...document.querySelectorAll('.scanChk:checked')].map(c => scannedItems[+c.dataset.i]);
+  if (!chosen.length) { closeScan(); return; }
+  const r = await api(`/api/cafe/${CAFE}/menu/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: chosen }) });
+  const d = await r.json();
+  closeScan();
+  if (d.ok) { alert(`✅ Added ${d.added} items to your menu! Review prices and photos in the list below.`); drawMenu(); }
+  else alert(d.error || 'Could not add items.');
+}
+
+function showScanModal(html, wide) {
+  let m = document.getElementById('scanModal');
+  if (!m) { m = document.createElement('div'); m.id = 'scanModal'; m.className = 'tour'; document.body.appendChild(m); }
+  m.innerHTML = `<div class="tour-box" style="max-width:${wide ? '460' : '360'}px">${html}</div>`;
+  m.classList.add('show');
+}
+function closeScan() { const m = document.getElementById('scanModal'); if (m) m.classList.remove('show'); }
 
 async function saveItem(id, btn, tr) {
   await api(`/api/menu/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },

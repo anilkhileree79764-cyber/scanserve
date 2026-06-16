@@ -28,6 +28,10 @@ services:
       # Email — preferred: Brevo HTTP API (works on free hosts that block SMTP ports)
       - key: BREVO_API_KEY
         sync: false
+      # AI menu-photo scanning (optional) — an Anthropic API key from console.anthropic.com.
+      # Without it, the "Scan menu photo" button shows "not enabled".
+      - key: ANTHROPIC_API_KEY
+        sync: false
       # SMTP — alternative to the API (may be blocked on free hosts). Needs SMTP_FROM as sender.
       - key: SMTP_HOST
         sync: false

@@ -113,6 +113,24 @@ test('demo Razorpay verify is rejected (no self-activation without real payment)
   assert.notEqual(t.plan, 'paid'); // still on trial, not silently upgraded
 });
 
+test('menu photo scan reports not-enabled without an API key', async () => {
+  const r = await post(`/api/cafe/${S.cafe}/menu/scan`, { data: 'data:image/png;base64,iVBORw0KGgo=' }, S.token);
+  assert.equal(r.status, 503);
+  assert.equal((await r.json()).not_enabled, true);
+});
+
+test('bulk menu add inserts items', async () => {
+  const before = (await (await get(`/api/cafe/${S.cafe}/menu`, S.token)).json()).length;
+  const r = await post(`/api/cafe/${S.cafe}/menu/bulk`, { items: [
+    { name: 'Scanned Latte', price: 90, category: 'Coffee', food_type: 'veg' },
+    { name: 'Scanned Wrap', price: 130, category: 'Food', food_type: 'nonveg' },
+  ] }, S.token);
+  assert.equal((await r.json()).added, 2);
+  const after = (await (await get(`/api/cafe/${S.cafe}/menu`, S.token)).json());
+  assert.equal(after.length, before + 2);
+  assert.ok(after.find(i => i.name === 'Scanned Latte' && i.price === 9000));
+});
+
 test('bulk table creation adds numbered tables', async () => {
   const before = (await (await get(`/api/cafe/${S.cafe}/seats`, S.token)).json()).length;
   const r = await post(`/api/cafe/${S.cafe}/seats/bulk`, { count: 12 }, S.token);

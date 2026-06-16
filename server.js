@@ -476,6 +476,64 @@ app.post('/api/cafe/:cafeId/menu', auth.requireAuth, wrap(async (req, res) => {
   res.json({ ok: true, id: r.lastInsertRowid });
 }));
 
+// AI: read a photo of a paper menu and extract items. Needs ANTHROPIC_API_KEY.
+app.post('/api/cafe/:cafeId/menu/scan', auth.requireAuth, wrap(async (req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return res.status(503).json({ error: 'Menu photo scanning is not enabled yet.', not_enabled: true });
+  const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec((req.body.data || '').trim());
+  if (!m) return res.status(400).json({ error: 'Please choose a clear photo of your menu.' });
+  const mediaType = m[1].toLowerCase(), b64 = m[2];
+  if (Buffer.from(b64, 'base64').length > 5 * 1024 * 1024) return res.status(413).json({ error: 'Photo is too large (max 5 MB).' });
+  const prompt = `This is a photo of a cafe/restaurant menu. Extract every distinct food and drink item.
+Reply with ONLY a JSON array, no other text. Each element: {"name": string, "price": number (rupees as an integer; 0 if no price is shown), "category": string (e.g. Coffee, Tea, Food, Snacks, Desserts), "food_type": "veg"|"nonveg"|"egg", "spicy": 0|1|2|3}.
+Default food_type to "veg" unless clearly non-veg (chicken, mutton, fish, egg). Max 60 items.`;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.MENU_SCAN_MODEL || 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } },
+          { type: 'text', text: prompt },
+        ] }],
+      }),
+    });
+    if (!r.ok) { console.error('[menu/scan] anthropic', r.status, await r.text()); return res.status(502).json({ error: 'Could not read the photo. Try a clearer, well-lit photo.' }); }
+    const data = await r.json();
+    const text = (data.content || []).map(c => c.text || '').join('');
+    const jsonStr = (text.match(/\[[\s\S]*\]/) || [])[0];
+    let items;
+    try { items = JSON.parse(jsonStr); } catch { return res.status(502).json({ error: 'Could not understand the menu. Try a clearer photo.' }); }
+    const FOOD = ['veg', 'nonveg', 'egg'];
+    items = (Array.isArray(items) ? items : []).filter(i => i && i.name).slice(0, 60).map(i => ({
+      name: String(i.name).slice(0, 100), price: Math.max(0, Math.round(Number(i.price) || 0)),
+      category: String(i.category || 'General').slice(0, 40), food_type: FOOD.includes(i.food_type) ? i.food_type : 'veg',
+      spicy: Math.max(0, Math.min(3, parseInt(i.spicy) || 0)),
+    }));
+    res.json({ ok: true, items });
+  } catch (e) { console.error('[menu/scan]', e.message); res.status(502).json({ error: 'Menu scan failed. Please try again.' }); }
+}));
+
+// Add many menu items at once (used after confirming a scanned menu).
+app.post('/api/cafe/:cafeId/menu/bulk', auth.requireAuth, wrap(async (req, res) => {
+  const items = Array.isArray(req.body.items) ? req.body.items.slice(0, 100) : [];
+  if (!items.length) return res.status(400).json({ error: 'No items to add' });
+  const ins = db.prepare('INSERT INTO menu_items (cafe_id,name,price,category,prep_mins,food_type,spicy,station) VALUES (?,?,?,?,?,?,?,?)');
+  let added = 0;
+  for (const i of items) {
+    if (!i || !i.name || !(i.price >= 0)) continue;
+    const ft = FOOD_TYPES.includes(i.food_type) ? i.food_type : 'veg';
+    await ins.run(req.cafe_id, String(i.name).slice(0, 100).trim(), Math.round(i.price * 100),
+      (i.category || 'General').toString().slice(0, 40), parseInt(i.prep_mins) || 10, ft,
+      Math.max(0, Math.min(3, parseInt(i.spicy) || 0)), 'Kitchen');
+    added++;
+  }
+  audit(req.cafe_id, req.owner_email, 'menu.bulk_add', String(added));
+  res.json({ ok: true, added });
+}));
+
 app.post('/api/menu/:id', auth.requireAuth, wrap(async (req, res) => {
   const m = await db.prepare('SELECT cafe_id FROM menu_items WHERE id = ?').get(req.params.id);
   if (!m || m.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not your item' });
