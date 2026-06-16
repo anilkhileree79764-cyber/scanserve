@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Owner Admin — ScanServe</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,sans-serif}
+  body{margin:0;background:#f4f5f7;color:#1f2733}
+  header{background:#1f2733;color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center}
+  header h1{margin:0;font-size:17px}
+  header button{background:transparent;border:1px solid #4a5563;color:#fff;border-radius:8px;padding:7px 14px;cursor:pointer}
+  .wrap{max-width:900px;margin:0 auto;padding:20px}
+  .card{background:#fff;border:1px solid #e6e9ee;border-radius:12px;padding:20px;margin-bottom:18px}
+  .card h2{margin:0 0 4px;font-size:16px}.card p.sub{margin:0 0 14px;color:#7a8694;font-size:13px}
+  label{display:block;font-size:13px;color:#7a8694;margin-bottom:4px;font-weight:600}
+  input{width:100%;max-width:360px;padding:11px 12px;border:1px solid #e6e9ee;border-radius:8px;font-size:15px;margin-bottom:12px}
+  button.primary{background:#b5651d;color:#fff;border:0;border-radius:10px;padding:11px 20px;font-size:15px;font-weight:600;cursor:pointer}
+  .err{color:#c0392b;font-size:14px;min-height:18px}.ok{color:#2e9e5b;font-size:14px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #e6e9ee}
+  th{background:#fafbfc;color:#7a8694;font-size:13px}
+  .badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:12px;font-weight:600}
+  .b-paid{background:#d1e7dd;color:#0a3622}.b-trial{background:#fff3cd;color:#856404}.b-expired{background:#fde8e6;color:#c0392b}
+  .b-claim{background:#cfe2ff;color:#084298;margin-left:6px}
+  .markbtn{background:#2e9e5b;color:#fff;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px}
+  .center{max-width:380px;margin:60px auto}
+  .hide{display:none}
+</style></head>
+<body>
+<header><h1>ScanServe — Owner Admin</h1><button onclick="logout()" id="logoutBtn" class="hide">Log out</button></header>
+
+<!-- Login / first-run -->
+<div class="wrap" id="auth">
+  <div class="card center">
+    <h2 id="authTitle">Owner login</h2>
+    <p class="sub" id="authSub">Enter your admin password.</p>
+    <input id="pass" type="password" placeholder="Admin password">
+    <div class="err" id="authErr"></div>
+    <button class="primary" id="authBtn" onclick="doAuth()">Log in</button>
+  </div>
+</div>
+
+<!-- Admin panel -->
+<div class="wrap hide" id="panel">
+  <div class="card">
+    <h2>Your receiving UPI</h2>
+    <p class="sub">This is where cafes send the ₹<span id="priceLbl">499</span>/month subscription. Money comes straight to your account.</p>
+    <label>UPI ID (e.g. yourname@okhdfcbank, 98765xxxxx@ybl)</label>
+    <input id="upiId" placeholder="yourname@okhdfcbank">
+    <label>Display name (shown in the payment app)</label>
+    <input id="upiName" placeholder="ScanServe">
+    <div class="err" id="upiErr"></div>
+    <button class="primary" onclick="saveUpi()">Save UPI</button>
+    <span class="ok" id="upiOk"></span>
+  </div>
+
+  <div class="card">
+    <h2>Cafes</h2>
+    <p class="sub">When a cafe pays you and shows a 💬 "claims paid" mark (or messages you), confirm it here to give them 30 days.</p>
+    <table><thead><tr><th>Cafe</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody id="cafeRows"></tbody></table>
+  </div>
+</div>
+
+<script>
+let TOKEN = localStorage.getItem('ss_admin_token');
+const H = () => ({ Authorization: 'Bearer ' + TOKEN });
+
+async function boot() {
+  const st = await fetch('/api/admin/status').then(r => r.json());
+  if (!st.setup) {
+    document.getElementById('authTitle').textContent = 'Create your admin password';
+    document.getElementById('authSub').textContent = 'First time — set a password only you know. Do this now.';
+    document.getElementById('authBtn').textContent = 'Create password';
+    document.getElementById('authBtn').dataset.mode = 'setup';
+  }
+  if (TOKEN) {
+    const ok = await loadPanel();
+    if (!ok) { TOKEN = null; localStorage.removeItem('ss_admin_token'); }
+  }
+}
+
+async function doAuth() {
+  const password = document.getElementById('pass').value;
+  const mode = document.getElementById('authBtn').dataset.mode === 'setup' ? 'setup' : 'login';
+  const r = await fetch('/api/admin/' + mode, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+  const d = await r.json();
+  if (!d.ok) { document.getElementById('authErr').textContent = d.error || 'Failed'; return; }
+  TOKEN = d.token; localStorage.setItem('ss_admin_token', TOKEN);
+  loadPanel();
+}
+
+async function loadPanel() {
+  const r = await fetch('/api/admin/state', { headers: H() });
+  if (r.status === 401) return false;
+  const s = await r.json();
+  document.getElementById('auth').classList.add('hide');
+  document.getElementById('panel').classList.remove('hide');
+  document.getElementById('logoutBtn').classList.remove('hide');
+  document.getElementById('upiId').value = s.upi_id || '';
+  document.getElementById('upiName').value = s.upi_name || '';
+  document.getElementById('priceLbl').textContent = s.price_rupees;
+  const tb = document.getElementById('cafeRows'); tb.innerHTML = '';
+  if (!s.cafes.length) tb.innerHTML = '<tr><td colspan=4 style="color:#7a8694">No cafes have signed up yet.</td></tr>';
+  for (const c of s.cafes) {
+    const tr = document.createElement('tr');
+    const status = c.plan === 'paid' && c.active
+      ? `<span class="badge b-paid">Paid</span>`
+      : (c.active ? `<span class="badge b-trial">Trial</span>` : `<span class="badge b-expired">Expired</span>`);
+    const claim = c.claimed ? `<span class="badge b-claim">💬 claims paid</span>` : '';
+    const nameTd = document.createElement('td'); nameTd.textContent = c.name;
+    const emailTd = document.createElement('td'); emailTd.textContent = c.owner_email || '—';
+    const statTd = document.createElement('td'); statTd.innerHTML = status + claim;
+    const actTd = document.createElement('td');
+    const b = document.createElement('button'); b.className = 'markbtn'; b.textContent = '✓ Mark paid (30 days)';
+    b.onclick = () => markPaid(c.id, b);
+    actTd.appendChild(b);
+    tr.append(nameTd, emailTd, statTd, actTd);
+    tb.appendChild(tr);
+  }
+  return true;
+}
+
+async function saveUpi() {
+  document.getElementById('upiErr').textContent = ''; document.getElementById('upiOk').textContent = '';
+  const r = await fetch('/api/admin/upi', { method: 'POST', headers: { 'Content-Type': 'application/json', ...H() },
+    body: JSON.stringify({ upi_id: document.getElementById('upiId').value, upi_name: document.getElementById('upiName').value }) });
+  const d = await r.json();
+  if (d.ok) { document.getElementById('upiOk').textContent = 'Saved ✓'; }
+  else document.getElementById('upiErr').textContent = d.error || 'Failed';
+}
+
+async function markPaid(id, btn) {
+  if (!confirm('Confirm you received the payment from this cafe? This gives them 30 days.')) return;
+  btn.disabled = true; btn.textContent = 'Activating…';
+  const r = await fetch(`/api/admin/cafe/${id}/mark-paid`, { method: 'POST', headers: H() });
+  const d = await r.json();
+  if (d.ok) loadPanel(); else { alert(d.error || 'Failed'); btn.disabled = false; btn.textContent = '✓ Mark paid (30 days)'; }
+}
+
+function logout() { localStorage.removeItem('ss_admin_token'); location.reload(); }
+boot();
+</script>
+</body></html>

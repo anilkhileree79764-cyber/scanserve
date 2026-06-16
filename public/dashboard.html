@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cafe Dashboard — ScanServe</title>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   :root{--bg:#f4f5f7;--card:#fff;--ink:#1f2733;--accent:#b5651d;--muted:#7a8694;--line:#e6e9ee;--green:#2e9e5b;--amber:#e08a1e}
   *{box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
@@ -1082,32 +1083,46 @@ async function loadTrial() {
   b.append(s, btn);
 }
 
+// Subscribe = pay the cafe owner directly via UPI (no Razorpay).
 async function startBilling() {
-  const r = await api(`/api/cafe/${CAFE}/billing/start`, { method: 'POST' });
+  const r = await api(`/api/cafe/${CAFE}/pay-info`, { method: 'GET' });
   if (!r) return;
-  const o = await r.json();
-  if (o.error) { alert(o.error); return; }
-  if (o.demo) {
-    // No live payment keys configured → simulate a successful payment (demo mode)
-    if (!confirm('Demo billing mode (no payment gateway configured).\n\nActivate a 30-day paid plan now for testing?')) return;
-    await finishBilling({ rzp_order_id: o.order_id, rzp_payment_id: 'demo', signature: 'demo' });
+  const p = await r.json();
+  if (!p.configured) {
+    alert('Online subscription is not set up yet. Please contact us to renew your plan.');
     return;
   }
-  // Live mode → open Razorpay checkout
-  if (typeof Razorpay === 'undefined') { alert('Payment library still loading — please try again in a moment.'); return; }
-  const rzp = new Razorpay({
-    key: o.key_id, amount: o.amount, currency: 'INR', name: NAME || 'ScanServe', description: 'Monthly subscription',
-    order_id: o.order_id,
-    handler: (resp) => finishBilling({ rzp_order_id: resp.razorpay_order_id, rzp_payment_id: resp.razorpay_payment_id, signature: resp.razorpay_signature }),
-  });
-  rzp.open();
+  showUpiModal(p);
 }
 
-async function finishBilling(payload) {
-  const r = await api(`/api/cafe/${CAFE}/billing/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  const d = await r.json();
-  if (d.ok) { alert('🎉 Payment successful! Your plan is active for 30 more days.'); loadTrial(); }
-  else alert(d.error || 'Payment could not be verified.');
+function showUpiModal(p) {
+  const amt = p.amount_rupees;
+  const link = `upi://pay?pa=${encodeURIComponent(p.upi_id)}&pn=${encodeURIComponent(p.upi_name)}&am=${amt}&cu=INR&tn=${encodeURIComponent('ScanServe subscription')}`;
+  let m = document.getElementById('upiModal');
+  if (!m) { m = document.createElement('div'); m.id = 'upiModal'; m.className = 'tour'; document.body.appendChild(m); }
+  m.innerHTML = `
+    <div class="tour-box" style="max-width:360px">
+      <h2>Pay ₹${amt} to subscribe</h2>
+      <p style="margin:0 0 10px">On your phone, tap the button to pay with any UPI app. On a computer, scan this QR with your phone:</p>
+      <div id="upiQr" style="display:flex;justify-content:center;margin:10px 0"></div>
+      <p style="font-size:13px;color:#555;margin:6px 0">UPI ID: <b>${p.upi_id}</b></p>
+      <a href="${link}" class="upi-pay" style="display:block;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;padding:12px;font-weight:700;margin:8px 0">📲 Pay ₹${amt} with UPI app</a>
+      <p style="font-size:12px;color:#888;margin:8px 0">After paying, tap below. Your plan turns on once we confirm the payment (usually within a few hours).</p>
+      <button onclick="claimPaid()" style="background:var(--green);color:#fff;border:0;border-radius:10px;padding:11px 18px;font-size:15px;cursor:pointer;width:100%">✓ I've paid ₹${amt}</button>
+      <button class="tour-skip" onclick="document.getElementById('upiModal').classList.remove('show')">Close</button>
+    </div>`;
+  m.classList.add('show');
+  const qd = m.querySelector('#upiQr'); qd.innerHTML = '';
+  try { new QRCode(qd, { text: link, width: 180, height: 180 }); } catch (e) {}
+}
+
+async function claimPaid() {
+  await api(`/api/cafe/${CAFE}/billing/claim`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+  const m = document.getElementById('upiModal');
+  m.querySelector('.tour-box').innerHTML = `
+    <h2>Thank you! 🙏</h2>
+    <p>We've noted your payment. Your plan will be activated shortly after we confirm it. You'll see the banner disappear once it's active.</p>
+    <button onclick="document.getElementById('upiModal').classList.remove('show')" style="background:var(--accent);color:#fff;border:0;border-radius:10px;padding:11px 22px;font-size:15px;cursor:pointer;margin-top:10px">Done</button>`;
 }
 
 // ===== DESKTOP NOTIFICATIONS =====

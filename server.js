@@ -652,6 +652,7 @@ app.post('/api/cafe/:cafeId/billing/start', auth.requireAuth, auth.requireOwner,
 
 // Verify payment → extend paid_until by 30 days and flip to paid plan.
 app.post('/api/cafe/:cafeId/billing/verify', auth.requireAuth, auth.requireOwner, wrap(async (req, res) => {
+  if (!payments.LIVE) return res.status(400).json({ error: 'Razorpay not enabled. Use UPI to subscribe.' });
   const { rzp_order_id, rzp_payment_id, signature } = req.body;
   if (!payments.verifySignature(rzp_order_id, rzp_payment_id, signature))
     return res.status(400).json({ error: 'Payment verification failed' });
@@ -663,6 +664,89 @@ app.post('/api/cafe/:cafeId/billing/verify', auth.requireAuth, auth.requireOwner
   audit(req.cafe_id, req.owner_email, 'billing.paid', rzp_payment_id || 'demo');
   const updated = await getCafe(req.params.cafeId);
   res.json({ ok: true, plan: 'paid', paid_until: updated.paid_until });
+}));
+
+// ===== DIRECT UPI SUBSCRIPTION PAYMENTS =====
+// Cafe owner fetches the SaaS owner's UPI to build a "pay me directly" link.
+app.get('/api/cafe/:cafeId/pay-info', auth.requireAuth, wrap(async (req, res) => {
+  const p = await db.prepare('SELECT upi_id, upi_name, price FROM platform WHERE id=1').get();
+  if (!p || !p.upi_id) return res.json({ configured: false });
+  res.json({ configured: true, upi_id: p.upi_id, upi_name: p.upi_name || 'ScanServe', amount_rupees: (p.price || SUB_PRICE) / 100 });
+}));
+
+// Cafe owner tells us they've paid via UPI → queues for the owner to confirm.
+app.post('/api/cafe/:cafeId/billing/claim', auth.requireAuth, wrap(async (req, res) => {
+  await db.prepare('INSERT INTO payment_claims (cafe_id, ref) VALUES (?,?)').run(req.cafe_id, (req.body.ref || '').toString().slice(0, 40) || null);
+  audit(req.cafe_id, req.owner_email, 'payment.claimed', (req.body.ref || '').toString().slice(0, 40) || null);
+  res.json({ ok: true });
+}));
+
+// ===== ADMIN (the SaaS owner — you) =====
+async function requireAdmin(req, res, next) {
+  try {
+    const s = await auth.sessionFromReq(req);
+    if (!s || s.actor_kind !== 'admin') return res.status(401).json({ error: 'Admin login required' });
+    next();
+  } catch (e) { next(e); }
+}
+
+// Is the admin account set up yet? (drives first-run vs login on /admin.html)
+app.get('/api/admin/status', wrap(async (req, res) => {
+  const p = await db.prepare('SELECT admin_hash, upi_id FROM platform WHERE id=1').get();
+  res.json({ setup: !!(p && p.admin_hash), upi_configured: !!(p && p.upi_id) });
+}));
+
+// First run only: create the admin password.
+app.post('/api/admin/setup', authLimiter, wrap(async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 8) return res.status(400).json({ error: 'Choose a password of at least 8 characters' });
+  const p = await db.prepare('SELECT admin_hash FROM platform WHERE id=1').get();
+  if (p && p.admin_hash) return res.status(409).json({ error: 'Admin is already set up. Please log in.' });
+  await db.prepare("INSERT INTO platform (id, admin_hash) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET admin_hash=excluded.admin_hash").run(auth.hashPassword(password));
+  const token = await auth.createSession({ id: 0, cafe_id: '__admin__' }, 'admin');
+  res.json({ ok: true, token });
+}));
+
+app.post('/api/admin/login', authLimiter, wrap(async (req, res) => {
+  const p = await db.prepare('SELECT admin_hash FROM platform WHERE id=1').get();
+  if (!p || !p.admin_hash || !auth.verifyPassword(req.body.password || '', p.admin_hash))
+    return res.status(401).json({ error: 'Wrong password' });
+  const token = await auth.createSession({ id: 0, cafe_id: '__admin__' }, 'admin');
+  res.json({ ok: true, token });
+}));
+
+// Admin dashboard data: your UPI + every (real) cafe and its plan status.
+app.get('/api/admin/state', requireAdmin, wrap(async (req, res) => {
+  const p = (await db.prepare('SELECT upi_id, upi_name, price FROM platform WHERE id=1').get()) || {};
+  const cafes = await db.prepare(
+    "SELECT id, name, owner_email, plan, trial_ends, paid_until, created_at FROM cafes WHERE id NOT LIKE 'demo_%' ORDER BY created_at DESC"
+  ).all();
+  const claims = await db.prepare('SELECT cafe_id FROM payment_claims WHERE resolved=0').all();
+  const claimed = new Set(claims.map(c => c.cafe_id));
+  for (const c of cafes) { c.claimed = claimed.has(c.id); c.active = cafeActive(c); }
+  res.json({ upi_id: p.upi_id || '', upi_name: p.upi_name || '', price_rupees: (p.price || SUB_PRICE) / 100, cafes });
+}));
+
+// Set your receiving UPI ID (where cafes pay you).
+app.post('/api/admin/upi', requireAdmin, wrap(async (req, res) => {
+  const { upi_id, upi_name } = req.body;
+  if (!upi_id || !/^[\w.\-]{2,}@[\w.\-]{2,}$/.test(upi_id.trim()))
+    return res.status(400).json({ error: 'Enter a valid UPI ID, e.g. yourname@okhdfcbank' });
+  await db.prepare("INSERT INTO platform (id, upi_id, upi_name) VALUES (1,?,?) ON CONFLICT(id) DO UPDATE SET upi_id=excluded.upi_id, upi_name=excluded.upi_name, updated_at=datetime('now')")
+    .run(upi_id.trim(), (upi_name || 'ScanServe').toString().slice(0, 50).trim());
+  res.json({ ok: true });
+}));
+
+// Confirm a cafe's payment → activate them for 30 more days.
+app.post('/api/admin/cafe/:id/mark-paid', requireAdmin, wrap(async (req, res) => {
+  const cafe = await getCafe(req.params.id);
+  if (!cafe) return res.status(404).json({ error: 'Cafe not found' });
+  const base = (cafe.paid_until && new Date(cafe.paid_until + 'Z').getTime() > Date.now()) ? `'${cafe.paid_until}'` : "datetime('now')";
+  await db.prepare(`UPDATE cafes SET plan='paid', paid_until=datetime(${base}, '+30 days') WHERE id=?`).run(req.params.id);
+  await db.prepare('UPDATE payment_claims SET resolved=1 WHERE cafe_id=?').run(req.params.id);
+  audit(req.params.id, 'admin', 'admin.mark_paid', null);
+  const updated = await getCafe(req.params.id);
+  res.json({ ok: true, paid_until: updated.paid_until });
 }));
 
 // ===== WAITER CALLS (owner) =====

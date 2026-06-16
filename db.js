@@ -109,6 +109,17 @@ CREATE TABLE IF NOT EXISTS waiter_calls (
   id INTEGER PRIMARY KEY AUTOINCREMENT, cafe_id TEXT NOT NULL, seat_id TEXT, seat_label TEXT,
   reason TEXT, resolved INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')));
 
+-- Single-row platform config (the SaaS owner's receiving UPI + admin password)
+CREATE TABLE IF NOT EXISTS platform (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  admin_hash TEXT, upi_id TEXT, upi_name TEXT, price INTEGER DEFAULT 49900,
+  updated_at TEXT DEFAULT (datetime('now')));
+
+-- A cafe owner's claim that they've paid (so the SaaS owner can confirm + activate)
+CREATE TABLE IF NOT EXISTS payment_claims (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, cafe_id TEXT NOT NULL, ref TEXT,
+  resolved INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')));
+
 CREATE INDEX IF NOT EXISTS idx_orders_cafe ON orders(cafe_id, status);
 `);
 

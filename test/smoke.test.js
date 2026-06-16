@@ -106,15 +106,11 @@ test('photo upload stores an image and returns a url', async () => {
   assert.equal(img.status, 200);
 });
 
-test('billing (demo) activates a paid plan', async () => {
-  const start = await (await post(`/api/cafe/${S.cafe}/billing/start`, {}, S.token)).json();
-  assert.ok(start.demo, 'demo billing without keys');
-  const v = await post(`/api/cafe/${S.cafe}/billing/verify`, { rzp_order_id: start.order_id, rzp_payment_id: 'demo', signature: 'demo' }, S.token);
-  const d = await v.json();
-  assert.ok(d.ok && d.plan === 'paid');
+test('demo Razorpay verify is rejected (no self-activation without real payment)', async () => {
+  const v = await post(`/api/cafe/${S.cafe}/billing/verify`, { rzp_order_id: 'x', rzp_payment_id: 'demo', signature: 'demo' }, S.token);
+  assert.equal(v.status, 400); // must pay via UPI; cannot fake a Razorpay payment
   const t = await (await get(`/api/cafe/${S.cafe}/trial`, S.token)).json();
-  assert.equal(t.plan, 'paid');
-  assert.ok(t.active);
+  assert.notEqual(t.plan, 'paid'); // still on trial, not silently upgraded
 });
 
 test('bulk table creation adds numbered tables', async () => {
@@ -134,6 +130,31 @@ test('expired free cafe is blocked from taking online orders (the paywall)', asy
   await db.prepare("UPDATE cafes SET plan='free', paid_until=NULL, trial_ends=datetime('now','-1 day') WHERE id=?").run(S.cafe);
   const r = await post('/api/order', { cafe_id: S.cafe, seat_id: S.seat, phone: '9876543210', items: [{ id: S.item, qty: 1 }] });
   assert.equal(r.status, 402, 'order should be refused with 402 Payment Required');
+});
+
+test('owner admin: setup, set UPI, cafe sees it, mark paid', async () => {
+  // first-run admin setup
+  const sd = await (await post('/api/admin/setup', { password: 'adminpass1' })).json();
+  assert.ok(sd.ok && sd.token);
+  const adminAuth = { Authorization: 'Bearer ' + sd.token, 'Content-Type': 'application/json' };
+  // set receiving UPI
+  const up = await fetch(BASE + '/api/admin/upi', { method: 'POST', headers: adminAuth, body: JSON.stringify({ upi_id: 'test@okhdfcbank', upi_name: 'Me' }) });
+  assert.equal((await up.json()).ok, true);
+  // a cafe owner can now see the pay info
+  const pi = await (await get(`/api/cafe/${S.cafe}/pay-info`, S.token)).json();
+  assert.ok(pi.configured && pi.upi_id === 'test@okhdfcbank' && pi.amount_rupees === 499);
+  // cafe claims they've paid
+  assert.equal((await (await post(`/api/cafe/${S.cafe}/billing/claim`, {}, S.token)).json()).ok, true);
+  // claim shows up in admin state
+  const state = await (await fetch(BASE + '/api/admin/state', { headers: { Authorization: 'Bearer ' + sd.token } })).json();
+  assert.ok(state.cafes.find(c => c.id === S.cafe && c.claimed));
+  // admin marks the cafe paid
+  const md = await (await fetch(BASE + `/api/admin/cafe/${S.cafe}/mark-paid`, { method: 'POST', headers: { Authorization: 'Bearer ' + sd.token } })).json();
+  assert.ok(md.ok && md.paid_until);
+  const t = await (await get(`/api/cafe/${S.cafe}/trial`, S.token)).json();
+  assert.equal(t.plan, 'paid');
+  // a second setup attempt must be rejected
+  assert.equal((await post('/api/admin/setup', { password: 'another1x' })).status, 409);
 });
 
 test('staff cannot manage staff (owner-only guard)', async () => {
