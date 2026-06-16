@@ -25,7 +25,10 @@ services:
         sync: false
       - key: RZP_KEY_SECRET
         sync: false
-      # SMTP — real reset/verification emails (leave unset for console demo mode)
+      # Email — preferred: Brevo HTTP API (works on free hosts that block SMTP ports)
+      - key: BREVO_API_KEY
+        sync: false
+      # SMTP — alternative to the API (may be blocked on free hosts). Needs SMTP_FROM as sender.
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

@@ -9,6 +9,9 @@ const notify = require('./notify');
 const mailer = require('./mailer');
 
 const app = express();
+// Render (and most hosts) sit behind a proxy that sets X-Forwarded-For.
+// Trust the first proxy hop so rate-limiting reads the real client IP.
+app.set('trust proxy', 1);
 
 // Security headers
 app.use(helmet({
