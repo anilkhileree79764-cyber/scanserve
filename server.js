@@ -536,6 +536,29 @@ app.post('/api/cafe/:cafeId/seats', auth.requireAuth, wrap(async (req, res) => {
   res.json({ ok: true, id: seatId, label: label.trim() });
 }));
 
+// Bulk-create numbered tables (e.g. add 20 tables at once). Capped at 200 total.
+app.post('/api/cafe/:cafeId/seats/bulk', auth.requireAuth, wrap(async (req, res) => {
+  const cafeId = req.params.cafeId;
+  const count = Math.max(1, Math.min(100, parseInt(req.body.count) || 0));
+  if (!count) return res.status(400).json({ error: 'How many tables? Enter a number 1–100.' });
+  const existing = await db.prepare('SELECT COUNT(*) n FROM seats WHERE cafe_id=?').get(cafeId);
+  if (Number(existing.n) + count > 200) return res.status(400).json({ error: 'A cafe can have at most 200 tables.' });
+  // continue numbering after the highest existing "Table N"
+  const labels = (await db.prepare('SELECT label FROM seats WHERE cafe_id=?').all(cafeId)).map(r => r.label);
+  let next = 1;
+  for (const l of labels) { const m = /^Table\s+(\d+)$/.exec(l); if (m) next = Math.max(next, parseInt(m[1]) + 1); }
+  const ins = db.prepare('INSERT INTO seats (id, cafe_id, label) VALUES (?,?,?)');
+  const created = [];
+  for (let i = 0; i < count; i++) {
+    const label = `Table ${next + i}`;
+    const id = `${cafeId}_t${Date.now()}_${i}`;
+    await ins.run(id, cafeId, label);
+    created.push({ id, label });
+  }
+  audit(req.cafe_id, req.owner_email, 'tables.bulk_add', String(count));
+  res.json({ ok: true, created: created.length });
+}));
+
 app.post('/api/seats/:seatId/delete', auth.requireAuth, wrap(async (req, res) => {
   const seat = await db.prepare('SELECT * FROM seats WHERE id = ?').get(req.params.seatId);
   if (!seat || seat.cafe_id !== req.cafe_id) return res.status(403).json({ error: 'Not your table' });

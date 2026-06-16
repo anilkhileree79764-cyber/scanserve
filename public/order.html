@@ -98,14 +98,17 @@
       <div>minutes left</div>
       <div class="pill" id="pointPill"></div>
       <a class="receipt-link" id="receiptLink" href="#" target="_blank">View / print receipt &rarr;</a>
-      <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
-      <div style="font-weight:600;margin-bottom:6px">How was it?</div>
-      <div class="stars" id="stars">
-        <span data-v="1">&#9733;</span><span data-v="2">&#9733;</span>
-        <span data-v="3">&#9733;</span><span data-v="4">&#9733;</span><span data-v="5">&#9733;</span>
+      <!-- Rating only appears once the order has been served -->
+      <div id="ratingBlock" style="display:none">
+        <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+        <div style="font-weight:600;margin-bottom:6px">Enjoyed your food? Rate us</div>
+        <div class="stars" id="stars">
+          <span data-v="1">&#9733;</span><span data-v="2">&#9733;</span>
+          <span data-v="3">&#9733;</span><span data-v="4">&#9733;</span><span data-v="5">&#9733;</span>
+        </div>
+        <input id="fbText" placeholder="Any comment? (optional)" style="margin-top:10px">
+        <button class="cta" id="fbBtn">Submit feedback</button>
       </div>
-      <input id="fbText" placeholder="Any comment? (optional)" style="margin-top:10px">
-      <button class="cta" id="fbBtn">Submit feedback</button>
     </div>
   </div>
 </div>
@@ -303,9 +306,11 @@ async function poll(){
   if(!ORDER_ID)return;
   try{
     const r=await fetch(`/api/order/${ORDER_ID}/status`); const d=await r.json();
-    const map={placed:'✅ Order received',preparing:'👨‍🍳 Being prepared',ready:'🔔 Ready! Come collect',served:'😊 Enjoy!'};
+    const map={placed:'✅ Order received',preparing:'👨‍🍳 Being prepared',ready:'🔔 Ready! Come collect',served:'😊 Enjoy your meal!'};
     document.getElementById('statusText').textContent=map[d.status]||d.status;
     document.getElementById('clock').textContent=d.remaining_mins;
+    // Only ask for a rating after the food has actually been served
+    document.getElementById('ratingBlock').style.display = d.status==='served' ? 'block' : 'none';
     if(d.status!=='served') setTimeout(poll,15000);
   }catch{ setTimeout(poll,15000); }
 }

@@ -117,6 +117,15 @@ test('billing (demo) activates a paid plan', async () => {
   assert.ok(t.active);
 });
 
+test('bulk table creation adds numbered tables', async () => {
+  const before = (await (await get(`/api/cafe/${S.cafe}/seats`, S.token)).json()).length;
+  const r = await post(`/api/cafe/${S.cafe}/seats/bulk`, { count: 12 }, S.token);
+  const d = await r.json();
+  assert.equal(d.created, 12);
+  const after = (await (await get(`/api/cafe/${S.cafe}/seats`, S.token)).json()).length;
+  assert.equal(after, before + 12);
+});
+
 test('expired free cafe is blocked from taking online orders (the paywall)', async () => {
   // open the same DB the server uses and force this cafe's trial to expire
   process.env.DB_PATH = DB_PATH;

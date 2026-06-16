@@ -5,31 +5,77 @@
 <style>
   *{box-sizing:border-box;font-family:system-ui,sans-serif}
   body{margin:0;background:#f4f5f7;color:#1f2733}
-  .bar{padding:14px 20px;background:#1f2733;color:#fff;display:flex;justify-content:space-between;align-items:center}
-  .bar button{background:#b5651d;color:#fff;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;font-size:14px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px;padding:20px}
-  .tile{background:#fff;border:1px solid #e6e9ee;border-radius:12px;padding:18px;text-align:center;page-break-inside:avoid}
-  .tile h3{margin:0 0 10px;color:#b5651d}
-  .tile .cap{margin-top:10px;font-size:13px;color:#7a8694}
-  @media print{.bar{display:none}body{background:#fff}.grid{gap:10px}}
+  .bar{padding:14px 20px;background:#1f2733;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  .bar .btns{display:flex;gap:8px}
+  .bar button,.bar a{background:#b5651d;color:#fff;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;font-size:14px;text-decoration:none}
+  .bar a.ghost{background:transparent;border:1px solid #4a5563}
+  .hint{padding:12px 20px;font-size:14px;color:#5a6573;background:#fff;border-bottom:1px solid #e6e9ee}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:18px;padding:20px}
+  .tile{background:#fff;border:1px solid #e6e9ee;border-radius:12px;padding:14px;text-align:center;page-break-inside:avoid;break-inside:avoid}
+  .tile canvas{width:100%;max-width:240px;height:auto}
+  .tile .dl{margin-top:8px;background:#eef1f5;color:#1f2733;border:0;border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer}
+  @media print{.bar,.hint{display:none}body{background:#fff}.grid{gap:8px}.tile .dl{display:none}.tile{border:none}}
 </style></head>
 <body>
-<div class="bar"><b id="title">Table QR codes</b><button onclick="print()">Print</button></div>
+<div class="bar">
+  <b id="title">Table QR codes</b>
+  <div class="btns">
+    <a href="/dashboard.html" class="ghost">← Dashboard</a>
+    <button onclick="downloadAll()">⬇ Download all</button>
+    <button onclick="window.print()">🖨 Print all</button>
+  </div>
+</div>
+<div class="hint">Each sticker has the <b>table number printed on it</b>. Print them here, or download to print from a phone/shop. Stick one on each table — customers scan to order.</div>
 <div class="grid" id="grid"></div>
 <script>
 const token=localStorage.getItem('ss_token'), cafe=localStorage.getItem('ss_cafe'), name=localStorage.getItem('ss_name');
 if(!token){location.href='/login.html';}
-document.getElementById('title').textContent=(name||'Cafe')+' — print & stick one per table';
+const CAFE_NAME=name||'Our Cafe';
+document.getElementById('title').textContent=CAFE_NAME+' — QR codes';
+const stickers=[]; // {label, canvas}
+
+// Build a printable sticker canvas: cafe name + big table label + QR + caption
+function makeSticker(label, url){
+  const tmp=document.createElement('div');
+  new QRCode(tmp,{text:url,width:240,height:240,correctLevel:QRCode.CorrectLevel.M});
+  const qr=tmp.querySelector('canvas');
+  const c=document.createElement('canvas'); c.width=320; c.height=420;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,320,420);
+  ctx.textAlign='center';
+  ctx.fillStyle='#b5651d'; ctx.font='bold 20px system-ui,sans-serif'; ctx.fillText(CAFE_NAME.slice(0,26), 160, 36);
+  ctx.fillStyle='#1f2733'; ctx.font='bold 32px system-ui,sans-serif'; ctx.fillText(label, 160, 80);
+  if(qr) ctx.drawImage(qr, 40, 100, 240, 240);
+  ctx.fillStyle='#1f2733'; ctx.font='17px system-ui,sans-serif'; ctx.fillText('Scan to see the menu & order', 160, 372);
+  ctx.fillStyle='#9aa3ad'; ctx.font='13px system-ui,sans-serif'; ctx.fillText('No app needed · Powered by ScanServe', 160, 398);
+  return c;
+}
+
+function download(canvas, label){
+  const a=document.createElement('a');
+  a.download=(label||'table').replace(/\s+/g,'-')+'-qr.png';
+  a.href=canvas.toDataURL('image/png'); a.click();
+}
+function downloadAll(){
+  if(!stickers.length) return;
+  stickers.forEach((s,i)=> setTimeout(()=>download(s.canvas, s.label), i*350));
+}
+
 async function load(){
-  const r=await fetch(`/api/cafe/${cafe}/seats`,{headers:{Authorization:'Bearer '+token}});
+  const r=await fetch('/api/cafe/'+cafe+'/seats',{headers:{Authorization:'Bearer '+token}});
   if(r.status===401){location.href='/login.html';return;}
   const seats=await r.json(); const g=document.getElementById('grid'); g.innerHTML='';
+  if(!seats.length){ g.innerHTML='<p style="padding:20px;color:#7a8694">No tables yet. Add tables in the dashboard first.</p>'; return; }
   for(const s of seats){
-    const url=`${location.origin}/order.html?seat=${s.id}`;
+    const url=location.origin+'/order.html?seat='+s.id;
+    const canvas=makeSticker(s.label, url);
+    stickers.push({label:s.label, canvas});
     const t=document.createElement('div'); t.className='tile';
-    t.innerHTML=`<h3>${s.label}</h3><div class="q"></div><div class="cap">Scan to order</div>`;
+    t.appendChild(canvas);
+    const dl=document.createElement('button'); dl.className='dl'; dl.textContent='⬇ Download this';
+    dl.onclick=()=>download(canvas, s.label);
+    t.appendChild(dl);
     g.appendChild(t);
-    new QRCode(t.querySelector('.q'),{text:url,width:160,height:160});
   }
 }
 load();

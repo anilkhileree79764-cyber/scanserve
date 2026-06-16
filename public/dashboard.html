@@ -256,14 +256,20 @@
     <table id="staffTable"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead><tbody></tbody></table>
   </div>
 
-  <div id="tables" class="pane hide" style="max-width:520px">
+  <div id="tables" class="pane hide" style="max-width:640px">
     <div class="note" style="background:#eef6ff;border-color:#bcdcff;color:#1f4e79">
-      <span>Add or remove tables. Each table gets its own QR code on the Print QR page.</span>
+      <span>Add as many tables as you need. Each gets its own QR code — go to <b>Print QR codes</b> to print or download them (the table number is printed on each one).</span>
     </div>
     <div class="additem">
-      <input id="newTableLabel" placeholder="Table name (e.g. Table 9, Terrace 1)" style="flex:1">
-      <button class="addbtn" onclick="addTable()">+ Add table</button>
+      <input id="bulkCount" type="number" min="1" max="100" placeholder="How many?" style="max-width:120px" value="10">
+      <button class="addbtn" onclick="addTablesBulk()">+ Add numbered tables</button>
+      <span style="color:var(--muted);font-size:13px;align-self:center">— creates Table 1, 2, 3…</span>
     </div>
+    <div class="additem">
+      <input id="newTableLabel" placeholder="Or add one custom name (e.g. Terrace 1, Counter)" style="flex:1">
+      <button class="addbtn" onclick="addTable()">+ Add one</button>
+    </div>
+    <p style="font-size:13px;color:var(--muted)"><b id="tableCount">0</b> tables &nbsp;·&nbsp; <a href="/qr.html" style="color:var(--accent)">Print / download QR codes →</a></p>
     <table id="tablesTable">
       <thead><tr><th>Table name</th><th>QR link</th><th></th></tr></thead>
       <tbody></tbody>
@@ -321,14 +327,30 @@
 // ── Notification sound via Web Audio API (no file needed) ──
 let audioCtx = null;
 let lastOrderIds = new Set();
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+// Browsers block audio until the user interacts with the page. Unlock the
+// audio engine on the first click/keypress so order beeps actually play.
+function unlockAudio() {
+  try {
+    const ctx = getCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+  } catch (e) {}
+}
+window.addEventListener('click', unlockAudio, { once: false });
+window.addEventListener('keydown', unlockAudio, { once: false });
+
 function playBeep() {
   try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const now = audioCtx.currentTime;
+    const ctx = getCtx();
+    if (ctx.state === 'suspended') ctx.resume();   // make sure it's awake
+    const now = ctx.currentTime;
     [0, 0.18, 0.36].forEach(offset => {
-      const o = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      o.connect(g); g.connect(audioCtx.destination);
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
       o.frequency.value = 880; o.type = 'sine';
       g.gain.setValueAtTime(0.4, now + offset);
       g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.15);
@@ -808,9 +830,10 @@ async function drawTables() {
   const r = await api(`/api/cafe/${CAFE}/seats`);
   if (!r) return;
   const seats = await r.json();
+  const cnt = document.getElementById('tableCount'); if (cnt) cnt.textContent = seats.length;
   const tbody = document.querySelector('#tablesTable tbody');
   tbody.innerHTML = '';
-  if (!seats.length) { tbody.innerHTML = '<tr><td colspan=3 style="color:#7a8694">No tables yet — add one above.</td></tr>'; return; }
+  if (!seats.length) { tbody.innerHTML = '<tr><td colspan=3 style="color:#7a8694">No tables yet — add some above.</td></tr>'; return; }
   for (const s of seats) {
     const tr = document.createElement('tr');
     const url = `${location.origin}/order.html?seat=${s.id}`;
@@ -833,6 +856,15 @@ async function addTable() {
   await api(`/api/cafe/${CAFE}/seats`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) });
   document.getElementById('newTableLabel').value = '';
   drawTables();
+}
+
+async function addTablesBulk() {
+  const count = parseInt(document.getElementById('bulkCount').value);
+  if (!(count >= 1)) { alert('Enter how many tables to add (1–100).'); return; }
+  const r = await api(`/api/cafe/${CAFE}/seats/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count }) });
+  const d = await r.json();
+  if (d.ok) { alert(`✅ Added ${d.created} tables. Go to "Print QR codes" to print or download them.`); drawTables(); }
+  else alert(d.error || 'Could not add tables.');
 }
 
 async function deleteTable(id) {
@@ -1080,10 +1112,12 @@ async function finishBilling(payload) {
 
 // ===== DESKTOP NOTIFICATIONS =====
 function enableNotifs() {
-  if (!('Notification' in window)) { alert('Your browser does not support notifications.'); return; }
+  unlockAudio();
+  playBeep(); // play a test beep so the owner can confirm sound works
+  if (!('Notification' in window)) { alert('Sound is on. (Your browser does not support desktop pop-up alerts.)'); return; }
   Notification.requestPermission().then(p => {
     document.getElementById('notifBtn').textContent = p === 'granted' ? '🔔 Alerts on' : '🔔 Alerts';
-    if (p === 'granted') new Notification('ScanServe', { body: "You'll now get an alert for every new order." });
+    if (p === 'granted') new Notification('ScanServe', { body: "You'll now get a sound + alert for every new order." });
   });
 }
 function notifyNewOrder(o) {
