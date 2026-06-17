@@ -525,10 +525,15 @@ async function pollOrderAlert() {
   } catch (e) {}
 }
 
+let ordersCache = [];
 async function drawOrders() {
   const r = await api(`/api/cafe/${CAFE}/orders`);
   if (!r) return;
-  const orders = (await r.json()).filter(o => o.status !== 'cancelled');
+  ordersCache = await r.json();
+  renderOrders();
+}
+function renderOrders() {
+  const orders = ordersCache.filter(o => o.status !== 'cancelled');
   const grid = document.getElementById('ordersGrid');
   grid.innerHTML = '';
   if (!orders.length) { grid.innerHTML = '<p style="color:#7a8694">No orders yet. Share your QR codes with customers!</p>'; return; }
@@ -596,20 +601,25 @@ async function drawOrders() {
 
 async function cancelOrder(id) {
   if (!confirm('Cancel order #' + id + '? It will move to History as cancelled.')) return;
-  await api(`/api/order/${id}/cancel`, { method: 'POST' });
-  refresh();
+  patchCache(id, { status: 'cancelled' }); reRenderActiveOrders();
+  api(`/api/order/${id}/cancel`, { method: 'POST' }).then(r => { if (!r || !r.ok) refresh(); }).catch(() => refresh());
 }
 
 async function setPriority(id, v) {
-  await api(`/api/order/${id}/priority`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ priority: v }) });
-  refresh();
+  patchCache(id, { priority: v }); reRenderActiveOrders();
+  api(`/api/order/${id}/priority`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ priority: v }) }).then(r => { if (!r || !r.ok) refresh(); }).catch(() => refresh());
 }
 
 let kitchenStation = localStorage.getItem('kitchenStation') || 'All';
+let kitchenCache = [];
 async function drawKitchen() {
   const r = await api(`/api/cafe/${CAFE}/orders`);
   if (!r) return;
-  let orders = (await r.json()).filter(x => ['placed', 'preparing'].includes(x.status));
+  kitchenCache = await r.json();
+  renderKitchen();
+}
+function renderKitchen() {
+  let orders = kitchenCache.filter(x => ['placed', 'preparing'].includes(x.status));
 
   // build station filter buttons from current orders
   const stations = ['All', ...new Set(orders.flatMap(o => o.stations || ['Kitchen']))];
@@ -619,7 +629,7 @@ async function drawKitchen() {
     for (const s of stations) {
       const b = document.createElement('button');
       b.textContent = s; b.className = s === kitchenStation ? 'on' : '';
-      b.onclick = () => { kitchenStation = s; localStorage.setItem('kitchenStation', s); drawKitchen(); };
+      b.onclick = () => { kitchenStation = s; localStorage.setItem('kitchenStation', s); renderKitchen(); };
       fbar.appendChild(b);
     }
   }
@@ -1021,17 +1031,28 @@ async function saveSettings() {
   }
 }
 
+// Re-render whichever order view is open, from the local cache (instant).
+function reRenderActiveOrders() {
+  const which = document.querySelector('.tab.on').dataset.t;
+  if (which === 'orders') renderOrders();
+  else if (which === 'kitchen') renderKitchen();
+}
+function patchCache(id, changes) {
+  for (const c of [ordersCache, kitchenCache]) { const o = c.find(x => x.id === id); if (o) Object.assign(o, changes); }
+}
+// All order actions update the screen FIRST (optimistic), then sync to the
+// server in the background — so buttons feel instant even on the slow free tier.
 async function adv(id, st) {
-  await api(`/api/order/${id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: st }) });
-  refresh();
+  patchCache(id, { status: st }); reRenderActiveOrders();
+  api(`/api/order/${id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: st }) }).then(r => { if (!r || !r.ok) refresh(); }).catch(() => refresh());
+}
+async function markPaid(id) {
+  patchCache(id, { paid: 1 }); reRenderActiveOrders();
+  api(`/api/order/${id}/paid`, { method: 'POST' }).then(r => { if (!r || !r.ok) refresh(); }).catch(() => refresh());
 }
 async function toggleItem(id, v) {
   await api(`/api/menu/${id}/available`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ available: v }) });
   drawMenu();
-}
-async function markPaid(id) {
-  await api(`/api/order/${id}/paid`, { method: 'POST' });
-  refresh();
 }
 
 // ===== REPORTS =====

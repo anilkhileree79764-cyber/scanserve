@@ -98,6 +98,7 @@
       <div>minutes left</div>
       <div class="pill" id="pointPill"></div>
       <a class="receipt-link" id="receiptLink" href="#" target="_blank">View / print receipt &rarr;</a>
+      <button class="cta" id="orderMoreBtn" style="margin-top:12px">🍽️ Order more items</button>
       <!-- Rating only appears once the order has been served -->
       <div id="ratingBlock" style="display:none">
         <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
@@ -325,6 +326,15 @@ document.getElementById('fbBtn').onclick=async()=>{
     body:JSON.stringify({rating,feedback:document.getElementById('fbText').value})});
   document.getElementById('fbBtn').textContent='Thank you! ❤️';
   document.getElementById('fbBtn').disabled=true;
+};
+
+// "Order more" — go back to the menu and let the customer place another order.
+document.getElementById('orderMoreBtn').onclick = () => {
+  document.getElementById('statusModal').classList.remove('show');
+  ORDER_ID = null;                 // stop polling the previous order
+  document.getElementById('ratingBlock').style.display = 'none';
+  render();                        // refresh menu (cart already cleared)
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
 load();
